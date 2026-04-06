@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#4F7DF2" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="人生账本" />
+    <title>人生账本</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("timeOnYourSideApp.theme");
+          if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <div class="app">
+      <header class="app-header">
+        <div class="app-header-row">
+          <div class="app-header-titles">
+            <h1>人生账本</h1>
+            <p class="tagline">时间站在你的一边</p>
+          </div>
+          <button type="button" class="theme-toggle" id="btn-theme-toggle" aria-label="切换界面明暗">
+            <span class="theme-toggle-label" id="theme-toggle-label">☀️</span>
+          </button>
+        </div>
+      </header>
+
+      <main id="main-content">
+      <!-- 首页 -->
+      <section id="panel-home" class="panel active" aria-label="趋势">
+        <div class="card home-focus-card">
+          <p class="card-title">专注趋势</p>
+          <p class="home-section-hint">
+            选择事项，查看每天为它投入的时间曲线
+          </p>
+          <div class="segmented focus-period-seg" role="tablist">
+            <button type="button" class="active" data-focus-period="week" role="tab">近一周</button>
+            <button type="button" data-focus-period="month" role="tab">近一月</button>
+            <button type="button" data-focus-period="custom" role="tab">自定义</button>
+          </div>
+          <div class="stats-range-row focus-custom-range" id="focus-custom-range" hidden>
+            <label class="sr-only" for="focus-date-start">趋势开始日期</label>
+            <input type="date" id="focus-date-start" class="stats-date-input" />
+            <span class="stats-range-sep">至</span>
+            <label class="sr-only" for="focus-date-end">趋势结束日期</label>
+            <input type="date" id="focus-date-end" class="stats-date-input" />
+          </div>
+          <div id="focus-slots" class="focus-slots"></div>
+          <div id="focus-chart-wrap" class="focus-chart-wrap"></div>
+        </div>
+
+        <div class="card home-accum-card">
+          <p class="card-title">累计投入</p>
+          <p class="home-section-hint">
+            如果成为专家需要10000小时，我已经投入了...
+          </p>
+          <div class="form-group accum-form-group">
+            <select id="accum-scope"></select>
+          </div>
+          <p class="accum-total-line" id="accum-total-display">—</p>
+          <p class="accum-since-line" id="accum-since-display"></p>
+        </div>
+
+      </section>
+
+      <!-- 计时 -->
+      <section id="panel-timer" class="panel" aria-label="计时">
+        <div id="rec-section" class="card rec-card" hidden>
+          <p class="card-title">任务推荐</p>
+          <div class="rec-main">
+            <div class="rec-text">
+              <strong id="rec-task-name">—</strong>
+              <span id="rec-detail">—</span>
+            </div>
+            <button type="button" class="btn-primary" id="rec-start">一键开始</button>
+          </div>
+          <p class="link-row">
+            <button type="button" class="btn-ghost" id="rec-other">改选其他任务</button>
+          </p>
+        </div>
+
+        <p id="rec-empty" class="empty-hint" hidden>
+          当前整点暂无推荐任务，使用一段时间后会出现快捷建议
+        </p>
+
+        <div id="timer-setup">
+          <div class="segmented" role="tablist">
+            <button type="button" class="active" id="seg-pick" role="tab">先选任务</button>
+            <button type="button" id="seg-direct" role="tab">直接计时</button>
+          </div>
+
+          <div id="flow-pick" class="flow-panel active">
+            <p class="card-title" style="margin-top: 0">任务选择</p>
+            <div id="task-grid" class="task-grid-root"></div>
+          </div>
+
+          <div id="flow-direct" class="flow-panel">
+            <div class="timer-hero">
+              <p class="timer-display" id="timer-display">00:00:00</p>
+              <p class="timer-sub" id="timer-sub"></p>
+            </div>
+            <div class="timer-actions">
+              <button type="button" class="btn-large primary" id="btn-direct-start">开始计时</button>
+            </div>
+          </div>
+
+          <p style="text-align: center; margin-top: 20px">
+            <button type="button" class="btn-ghost" id="link-manual">手动补一段记录</button>
+          </p>
+        </div>
+
+        <div id="timer-running" class="timer-running-view">
+          <div class="ring-wrap">
+            <div class="ring" id="ring"></div>
+          </div>
+          <p class="timer-display" id="timer-display-run">00:00:00</p>
+          <p class="timer-sub" id="timer-sub-run"></p>
+          <div class="timer-actions" style="max-width: 280px; margin: 24px auto 0">
+            <button type="button" class="btn-large primary" id="btn-stop">结束并保存</button>
+            <button type="button" class="btn-large secondary" id="btn-cancel-run">取消</button>
+          </div>
+          <p style="text-align: center; margin-top: 16px">
+            <button type="button" class="btn-ghost" id="link-manual2">手动补一段记录</button>
+          </p>
+        </div>
+      </section>
+
+      <!-- 统计与复盘 -->
+      <section id="panel-stats" class="panel" aria-label="统计与复盘">
+        <div class="card stats-range-card">
+          <p class="card-title">统计与复盘</p>
+          <p class="home-section-hint" style="margin-bottom: 10px">
+            时间所流向的，就是意义本身
+          </p>
+          <div class="stats-quick-row" role="tablist" aria-label="统计区间">
+            <button type="button" class="btn-quick-range" id="stats-quick-today" role="tab">本日</button>
+            <button type="button" class="btn-quick-range" id="stats-quick-7" role="tab">近7天</button>
+            <button type="button" class="btn-quick-range" id="stats-quick-30" role="tab">近30天</button>
+            <button type="button" class="btn-quick-range" id="stats-quick-custom" role="tab">自定义</button>
+          </div>
+          <div class="stats-range-row" id="stats-custom-range-row" hidden>
+            <label class="sr-only" for="stats-date-start">统计开始日期</label>
+            <input type="date" id="stats-date-start" name="stats-date-start" autocomplete="off" class="stats-date-input" />
+            <span class="stats-range-sep">至</span>
+            <label class="sr-only" for="stats-date-end">统计结束日期</label>
+            <input type="date" id="stats-date-end" name="stats-date-end" autocomplete="off" class="stats-date-input" />
+          </div>
+          <div class="donut-summary">
+            <p class="donut-summary-total" id="donut-total">—</p>
+            <p class="donut-summary-range" id="donut-label">—</p>
+          </div>
+          <div class="donut-wrap">
+            <div class="donut" id="donut" role="img" aria-label="大类时间分布" tabindex="0">
+              <div class="donut-hole" aria-hidden="true"></div>
+            </div>
+          </div>
+          <p id="donut-segment-hint" class="donut-segment-hint" hidden></p>
+          <p class="home-section-hint" style="margin-top: -6px; margin-bottom: 10px">
+            点击大类展开查看子类时长
+          </p>
+          <div id="accum-list"></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px">
+          <p class="card-title">当日时间线</p>
+          <div class="stats-range-row" style="margin-bottom: 0">
+            <label class="sr-only" for="timeline-date">时间线日期</label>
+            <input type="date" id="timeline-date" name="timeline-date" autocomplete="off" class="stats-date-input" />
+          </div>
+          <div id="timeline-list"></div>
+        </div>
+      </section>
+
+      <!-- 分类 -->
+      <section id="panel-categories" class="panel" aria-label="分类">
+        <div class="card" style="margin-bottom: 12px">
+          <p class="card-title">分类与图标</p>
+          <p style="margin: 0; font-size: 0.875rem; color: var(--text-secondary); line-height: 1.45">
+            用你喜欢的方式安排生活，为时间安排你钟意的颜色和图标
+          </p>
+        </div>
+        <div id="categories-tree"></div>
+        <button type="button" class="btn-large primary" id="btn-add-category" style="margin-top: 4px">
+          添加大类
+        </button>
+      </section>
+
+      <!-- 待办事项 -->
+      <section id="panel-todos" class="panel" aria-label="待办事项">
+        <div class="card" style="margin-bottom: 12px">
+          <p class="card-title">待办清单</p>
+          <div class="todo-input-row">
+            <label class="sr-only" for="todo-input">待办内容</label>
+            <input type="text" id="todo-input" name="todo-input" autocomplete="off" maxlength="120" placeholder="接下来做些什么呢？" />
+            <button type="button" class="btn-primary" id="todo-add">添加</button>
+          </div>
+          <label class="todo-toggle-row" for="todo-show-completed">
+            <input type="checkbox" id="todo-show-completed" />
+            <span>显示已完成事项</span>
+          </label>
+          <p class="todo-toolbar">
+            <button type="button" class="btn-ghost todo-clear-completed" id="todo-clear-completed" hidden>
+              清理已完成
+            </button>
+          </p>
+        </div>
+        <div id="todo-list"></div>
+      </section>
+      </main>
+
+      <!-- 底部导航 -->
+      <nav class="tab-bar" aria-label="主导航">
+        <button type="button" id="tab-todos">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <rect x="4.5" y="4.5" width="15" height="15" rx="3" />
+              <path d="M8.5 12l2.1 2.1L15.8 9" />
+            </svg>
+          </span>
+          待办
+        </button>
+        <button type="button" id="tab-categories">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <circle cx="12" cy="12" r="2.6" />
+              <path d="M12 4.2V2.8M12 21.2v-1.4M19.8 12h1.4M2.8 12h1.4M17.7 6.3l1-1M5.3 18.7l1-1M17.7 17.7l1 1M5.3 5.3l1 1" />
+              <circle cx="12" cy="12" r="7.2" />
+            </svg>
+          </span>
+          分类
+        </button>
+        <button type="button" class="active tab-center" id="tab-timer" aria-current="page" aria-label="计时">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <circle cx="12" cy="13" r="7.5" />
+              <path d="M12 13V9.5" />
+              <path d="M9.5 2.5H14.5" />
+              <path d="M15.7 5.4L17.5 3.8" />
+            </svg>
+          </span>
+        </button>
+        <button type="button" id="tab-stats">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M4.5 19.5H19.5" />
+              <rect x="6" y="12" width="2.8" height="7.5" rx="1.2" />
+              <rect x="10.6" y="8.5" width="2.8" height="11" rx="1.2" />
+              <rect x="15.2" y="5.5" width="2.8" height="14" rx="1.2" />
+            </svg>
+          </span>
+          统计
+        </button>
+        <button type="button" id="tab-home">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M3.5 18.5H20.5" />
+              <path d="M5.5 15.5L10 11L13 13.8L18.5 8.5" />
+              <circle cx="18.5" cy="8.5" r="1.5" />
+            </svg>
+          </span>
+          趋势
+        </button>
+      </nav>
+    </div>
+
+    <!-- 直接计时结束后：选择任务 -->
+    <div class="modal-backdrop" id="modal-save" role="dialog" aria-modal="true" aria-labelledby="sheet-save-title">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h2 id="sheet-save-title">保存这段记录</h2>
+        <p style="text-align: center; color: var(--text-secondary); margin: 0 0 12px; font-size: 0.9375rem">
+          时长 <strong id="sheet-save-duration" style="color: var(--text)">—</strong>
+        </p>
+        <div class="form-group">
+          <label>开始</label>
+          <input type="datetime-local" id="sheet-save-start" />
+        </div>
+        <div class="form-group">
+          <label>结束</label>
+          <input type="datetime-local" id="sheet-save-end" />
+        </div>
+        <p class="card-title" style="margin-bottom: 8px">这段时间属于哪个分类？</p>
+        <div class="task-picker-list" id="sheet-task-list"></div>
+        <div class="form-group">
+          <label for="sheet-save-memo">备注（可选）</label>
+          <textarea id="sheet-save-memo" rows="3" maxlength="200" placeholder="可写这段时间做的事或想法"></textarea>
+        </div>
+        <div class="timer-actions" style="margin-top: 8px">
+          <button type="button" class="btn-large primary" id="modal-save-confirm">保存记录</button>
+        </div>
+        <p style="text-align: center; margin-top: 16px">
+          <button type="button" class="btn-ghost" id="modal-save-dismiss">取消</button>
+        </p>
+      </div>
+    </div>
+
+    <!-- 手动补记录 -->
+    <div class="modal-backdrop" id="modal-manual" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h2>手动补一段记录</h2>
+        <div class="form-group">
+          <label>开始时间</label>
+          <input type="datetime-local" id="manual-start" />
+        </div>
+        <div class="form-group">
+          <label>结束时间</label>
+          <input type="datetime-local" id="manual-end" />
+        </div>
+        <div class="form-group">
+          <label>子类</label>
+          <select id="manual-task"></select>
+        </div>
+        <div class="form-group">
+          <label for="manual-memo">备注（可选）</label>
+          <textarea id="manual-memo" rows="3" maxlength="200" placeholder="可写这段时间做的事或想法"></textarea>
+        </div>
+        <div class="timer-actions">
+          <button type="button" class="btn-large primary" id="modal-manual-save">保存</button>
+          <button type="button" class="btn-large secondary" id="modal-manual-cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除大类 / 子类（含记录时：删光或迁移） -->
+    <div class="modal-backdrop" id="modal-delete-category" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h2 id="delete-taxonomy-title">删除大类</h2>
+        <div id="delete-cat-step-a">
+          <p class="modal-delete-cat-msg" id="delete-taxonomy-msg-a">
+            该分类下已有记录，删除分类及记录，或将记录迁移至其他分类。
+          </p>
+          <div class="timer-actions">
+            <button type="button" class="btn-large danger" id="delete-cat-with-entries">删除分类及全部记录</button>
+            <button type="button" class="btn-large secondary" id="delete-cat-migrate-start">迁移到其他子类</button>
+            <button type="button" class="btn-large secondary" id="delete-cat-cancel">取消</button>
+          </div>
+        </div>
+        <div id="delete-cat-step-b" hidden>
+          <p class="modal-delete-cat-msg" id="delete-taxonomy-msg-b">
+            选择目标子类后，该大类下所有时间记录将归入该子类，并删除当前大类。
+          </p>
+          <div class="form-group">
+            <label for="delete-cat-target-leaf">目标子类</label>
+            <select id="delete-cat-target-leaf"></select>
+          </div>
+          <p id="delete-cat-migrate-hint" class="empty-hint" hidden>
+            暂无可选子类。可点「新建大类并迁移」，先添加新大类与子类后再归并记录。
+          </p>
+          <div class="timer-actions">
+            <button type="button" class="btn-large primary" id="delete-cat-migrate-confirm">确认迁移并删除</button>
+            <button type="button" class="btn-large secondary" id="delete-cat-new-then-migrate">新建大类并迁移</button>
+            <button type="button" class="btn-large secondary" id="delete-cat-migrate-back">返回</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加/编辑 大类或子类 -->
+    <div class="modal-backdrop" id="modal-editor" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+      <div class="sheet sheet-tall">
+        <div class="sheet-handle"></div>
+        <h2 id="editor-title">编辑</h2>
+        <div class="form-group">
+          <label for="editor-name">名称</label>
+          <input type="text" id="editor-name" placeholder="例如：写作、跑步" maxlength="32" />
+        </div>
+        <p class="card-title" style="margin-bottom: 8px">图标</p>
+        <div class="icon-picker" id="editor-icon-picker"></div>
+        <p class="card-title" style="margin-bottom: 8px">颜色</p>
+        <div class="color-presets" id="editor-color-presets"></div>
+        <div class="timer-actions">
+          <button type="button" class="btn-large primary" id="editor-save">保存</button>
+          <button type="button" class="btn-large secondary" id="editor-cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        if (!("serviceWorker" in navigator)) return;
+        var p = location.protocol;
+        var h = location.hostname;
+        /* iOS/Safari 仅在安全来源注册 SW：HTTPS 或本机 localhost */
+        if (p !== "https:" && h !== "localhost" && h !== "127.0.0.1") return;
+        navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(function () {});
+      })();
+    </script>
+    <script src="app.js"></script>
+  </body>
+</html>
