@@ -2,11 +2,8 @@
 
 静态网页：`index.html`、`app.js`、`styles.css`、`manifest.json`、`icon.svg`、`sw.js`。
 
-<<<<<<< HEAD
-=======
 本仓库 **[Yin-s-Lab](https://github.com/YinZhi-Clare/Yin-s-Lab)** 的**默认分支**名为 **`Time-on-your-side-app`**（不是 `main`）。
 
->>>>>>> 0f6a85c (更新 README：默认分支说明)
 ## 只把本文件夹上传到 GitHub
 
 在终端中**进入本目录**（不要包含外层的 `Yin's project`）：
@@ -15,11 +12,7 @@
 cd "/Users/zhiyin/Yin's project/time-on-your-side-app"
 
 git init
-<<<<<<< HEAD
-git branch -M main
-=======
 git branch -M Time-on-your-side-app
->>>>>>> 0f6a85c (更新 README：默认分支说明)
 git add .
 git commit -m "Initial commit: 人生账本试用版"
 ```
@@ -28,11 +21,7 @@ git commit -m "Initial commit: 人生账本试用版"
 
 ```bash
 git remote add origin https://github.com/你的用户名/你的仓库名.git
-<<<<<<< HEAD
-git push -u origin main
-=======
 git push -u origin Time-on-your-side-app
->>>>>>> 0f6a85c (更新 README：默认分支说明)
 ```
 
 （若使用 SSH，把 `origin` 换成 `git@github.com:你的用户名/你的仓库名.git`。）
@@ -41,17 +30,10 @@ git push -u origin Time-on-your-side-app
 
 1. 打开该仓库 → **Settings** → **Pages**。
 2. **Build and deployment** → **Source**：**Deploy from a branch**。
-<<<<<<< HEAD
-3. **Branch** 选 **`main`**，文件夹选 **`/ (root)`**，保存。
-4. 等待一分钟左右，用 Safari 打开提示的地址（形如 `https://你的用户名.github.io/仓库名/`），再「添加到主屏幕」即可。
-
-之后更新页面：在本目录改文件 → `git add` → `git commit` → `git push`。
-=======
 3. **Branch** 选 **`Time-on-your-side-app`**，文件夹选 **`/ (root)`**，保存。
 4. 等待一分钟左右，用 Safari 打开提示的地址（形如 `https://yinzhi-clare.github.io/Yin-s-Lab/`），再「添加到主屏幕」即可。
 
 之后更新页面：在本目录改文件 → `git add` → `git commit` → `git push`（会推到默认分支）。
->>>>>>> 0f6a85c (更新 README：默认分支说明)
 
 ## 本机未安装 Git
 
