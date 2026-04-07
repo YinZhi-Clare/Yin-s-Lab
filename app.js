@@ -452,6 +452,13 @@ function cleanLegacyTimelineNote(note, taskId, storedActivity) {
       }
     }
   }
+  if (n) {
+    const normalized = n.replace(/\s+/g, "");
+    for (const line of candidates) {
+      if (!line) continue;
+      if (normalized === line.replace(/\s+/g, "")) return "";
+    }
+  }
   return n;
 }
 
