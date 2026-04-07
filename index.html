@@ -26,6 +26,11 @@
     <div class="app">
       <header class="app-header">
         <div class="app-header-row">
+          <div class="app-header-csv-tools">
+            <button type="button" class="btn-ghost app-header-csv-btn" id="btn-export-csv">导出</button>
+            <button type="button" class="btn-ghost app-header-csv-btn" id="btn-import-csv">导入</button>
+            <input type="file" id="import-csv-input" accept=".csv,text/csv" multiple hidden />
+          </div>
           <div class="app-header-titles">
             <h1>人生账本</h1>
             <p class="tagline">时间站在你的一边</p>
@@ -329,6 +334,33 @@
         <div class="timer-actions">
           <button type="button" class="btn-large primary" id="modal-manual-save">保存</button>
           <button type="button" class="btn-large secondary" id="modal-manual-cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="modal-entry-edit" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h2>编辑</h2>
+        <div class="form-group">
+          <label>开始时间</label>
+          <input type="datetime-local" id="edit-entry-start" />
+        </div>
+        <div class="form-group">
+          <label>结束时间</label>
+          <input type="datetime-local" id="edit-entry-end" />
+        </div>
+        <div class="form-group">
+          <label>子类</label>
+          <select id="edit-entry-task"></select>
+        </div>
+        <div class="form-group">
+          <label for="edit-entry-memo">备注（可选）</label>
+          <textarea id="edit-entry-memo" rows="3" maxlength="200" placeholder="可写这段时间做的事或想法"></textarea>
+        </div>
+        <div class="timer-actions">
+          <button type="button" class="btn-large primary" id="modal-entry-edit-save">保存</button>
+          <button type="button" class="btn-large secondary" id="modal-entry-edit-cancel">取消</button>
         </div>
       </div>
     </div>

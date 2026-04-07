@@ -129,10 +129,25 @@ body {
   min-height: 34px;
 }
 
+.app-header-csv-tools {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  gap: 2px;
+  z-index: 1;
+}
+
+.app-header-csv-btn {
+  padding: 6px 8px;
+  font-size: var(--fs-4);
+  min-height: 0;
+}
+
 .app-header-titles {
   width: 100%;
   text-align: center;
-  padding: 0 76px;
+  padding: 0 76px 0 88px;
 }
 
 .app-header h1 {
@@ -1467,6 +1482,74 @@ html[data-theme="dark"] .btn-mini.danger {
   font-size: var(--fs-4);
   color: var(--text-secondary);
   line-height: 1.45;
+}
+
+.timeline-swipe-wrap {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  margin-bottom: 0;
+  touch-action: pan-y;
+}
+
+.timeline-swipe-track {
+  display: flex;
+  transform: translateX(0);
+  will-change: transform;
+}
+
+.timeline-swipe-front {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  column-gap: 12px;
+  align-items: start;
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 18px;
+  background: var(--surface);
+}
+
+.timeline-swipe-edit {
+  width: 72px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border: none;
+  border-radius: 0;
+  background: var(--blue);
+  color: #fff;
+  font-size: var(--fs-4);
+  font-weight: var(--fw-2);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.timeline-swipe-delete {
+  width: 72px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border: none;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: #ff3b30;
+  color: #fff;
+  font-size: var(--fs-4);
+  font-weight: var(--fw-2);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+html[data-theme="dark"] .timeline-swipe-delete {
+  background: #ff453a;
+}
+
+.timeline-swipe-overshoot {
+  width: 36px;
+  flex-shrink: 0;
+  align-self: stretch;
+  background: #ff3b30;
+}
+
+html[data-theme="dark"] .timeline-swipe-overshoot {
+  background: #ff453a;
 }
 
 /* 待办事项 */

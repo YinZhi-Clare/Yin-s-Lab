@@ -351,6 +351,7 @@ let timerStartedAt = null;
 let timerMode = null;
 let preselectedTaskId = null;
 let pendingSaveDraft = null;
+let pendingEditEntryId = null;
 
 let editorCtx = {
   mode: "category",
@@ -797,7 +798,9 @@ function renderFocusChart() {
   let legend = '<div class="focus-legend">';
   series.forEach((s) => {
     const total = s.points.reduce((a, b) => a + b, 0);
-    const avgMin = Math.round(total / n / 60);
+    const daysWithData = s.points.filter((sec) => sec > 0).length;
+    const avgMin =
+      daysWithData > 0 ? Math.round(total / daysWithData / 60) : 0;
     legend += `<div class="focus-legend-item">`;
     legend += `<span class="focus-legend-dot" style="background:${s.meta.color}"></span>`;
     legend += `<span class="focus-legend-name">${escapeHtml(s.meta.label)}</span>`;
@@ -1064,9 +1067,11 @@ function renderStatsTrendChart() {
     svg += `<text x="${xAt(i)}" y="${CH - 10}" text-anchor="middle" font-size="19" fill="#8e8e93" font-family="PingFang SC,-apple-system,sans-serif">${day.label}</text>`;
   });
   svg += "</svg>";
-  const avgMin = Math.round(
-    points.reduce((a, b) => a + b, 0) / n / 60
-  );
+  const daysWithData = points.filter((sec) => sec > 0).length;
+  const avgMin =
+    daysWithData > 0
+      ? Math.round(points.reduce((a, b) => a + b, 0) / daysWithData / 60)
+      : 0;
   wrap.innerHTML =
     svg +
     `<p class="stats-trend-caption">${escapeHtml(meta.label)} · 区间内日均约 ${avgMin} 分钟</p>`;
@@ -1158,6 +1163,335 @@ function $(sel) {
   return document.querySelector(sel);
 }
 
+function entryTimeConflicts(start, end, excludeEntryId) {
+  const s = start.getTime();
+  const e = end.getTime();
+  for (const ent of state.entries) {
+    if (excludeEntryId && ent.id === excludeEntryId) continue;
+    const es = new Date(ent.start).getTime();
+    const ee = new Date(ent.end).getTime();
+    if (s < ee && e > es) return true;
+  }
+  return false;
+}
+
+function csvCell(v) {
+  if (v == null || v === undefined) return "";
+  const str = String(v);
+  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function parseCsvRows(text) {
+  const t = text
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const rows = [];
+  let row = [];
+  let i = 0;
+  let cell = "";
+  let inQuotes = false;
+  while (i < t.length) {
+    const c = t[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (t[i + 1] === '"') {
+          cell += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      cell += c;
+      i++;
+    } else if (c === '"') {
+      inQuotes = true;
+      i++;
+    } else if (c === ",") {
+      row.push(cell);
+      cell = "";
+      i++;
+    } else if (c === "\n") {
+      row.push(cell);
+      cell = "";
+      if (row.some((x) => x !== "")) rows.push(row);
+      row = [];
+      i++;
+    } else {
+      cell += c;
+      i++;
+    }
+  }
+  row.push(cell);
+  if (row.some((x) => x !== "")) rows.push(row);
+  return rows;
+}
+
+function buildTaxonomyCsv() {
+  const headers = [
+    "category_id",
+    "category_name",
+    "category_icon",
+    "category_color",
+    "sub_id",
+    "sub_name",
+    "sub_icon",
+    "sub_color",
+  ];
+  const lines = [headers.join(",")];
+  (state.categories || []).forEach((cat) => {
+    (cat.children || []).forEach((sub) => {
+      lines.push(
+        [
+          cat.id,
+          cat.name,
+          cat.icon,
+          cat.color,
+          sub.id,
+          sub.name,
+          sub.icon,
+          sub.color,
+        ]
+          .map(csvCell)
+          .join(",")
+      );
+    });
+  });
+  return lines.join("\n");
+}
+
+function buildTodosCsv() {
+  const headers = ["id", "text", "done"];
+  const lines = [headers.join(",")];
+  todoState.items.forEach((t) => {
+    lines.push([t.id, t.text, t.done ? "1" : "0"].map(csvCell).join(","));
+  });
+  return lines.join("\n");
+}
+
+function buildRecordsCsv() {
+  const headers = ["id", "task_id", "start", "end", "activity", "note"];
+  const lines = [headers.join(",")];
+  state.entries.forEach((e) => {
+    lines.push(
+      [
+        e.id,
+        e.taskId,
+        e.start,
+        e.end,
+        e.activity || "",
+        e.note || "",
+      ]
+        .map(csvCell)
+        .join(",")
+    );
+  });
+  return lines.join("\n");
+}
+
+function downloadCsvFile(filename, csvText) {
+  const blob = new Blob([`\uFEFF${csvText}`], {
+    type: "text/csv;charset=utf-8",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportThreeCsvs() {
+  downloadCsvFile("人生账本-类目.csv", buildTaxonomyCsv());
+  setTimeout(() => downloadCsvFile("人生账本-待办.csv", buildTodosCsv()), 120);
+  setTimeout(() => downloadCsvFile("人生账本-记录.csv", buildRecordsCsv()), 240);
+}
+
+function categoriesFromTaxonomyRows(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map((x) => String(x).trim());
+  const ix = (name) => h.indexOf(name);
+  const iCat = ix("category_id");
+  const iCn = ix("category_name");
+  const iCi = ix("category_icon");
+  const iCc = ix("category_color");
+  const iSid = ix("sub_id");
+  const iSn = ix("sub_name");
+  const iSi = ix("sub_icon");
+  const iSc = ix("sub_color");
+  if (iCat < 0) return JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+  const map = new Map();
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) continue;
+    const cid = row[iCat];
+    if (!cid) continue;
+    if (!map.has(cid)) {
+      map.set(cid, {
+        id: cid,
+        name: row[iCn] || "",
+        icon: row[iCi] || "folder",
+        color: row[iCc] || COLOR_PRESETS[0].hex,
+        children: [],
+      });
+    }
+    const sid = row[iSid];
+    if (sid) {
+      map.get(cid).children.push({
+        id: sid,
+        name: row[iSn] || "",
+        icon: row[iSi] || "circle",
+        color: row[iSc] || COLOR_PRESETS[0].hex,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
+function todosFromRows(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map((x) => String(x).trim());
+  const iId = h.indexOf("id");
+  const iText = h.indexOf("text");
+  const iDone = h.indexOf("done");
+  if (iText < 0) return todoState.items;
+  const items = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const text = String(row[iText] || "").trim();
+    if (!text) continue;
+    const doneRaw = String(row[iDone] || "").toLowerCase();
+    items.push({
+      id: row[iId] || genId("todo"),
+      text,
+      done: doneRaw === "1" || doneRaw === "true",
+    });
+  }
+  return items;
+}
+
+function recordsFromRows(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map((x) => String(x).trim());
+  const ix = (name) => h.indexOf(name);
+  const iId = ix("id");
+  const iTask = ix("task_id");
+  const iStart = ix("start");
+  const iEnd = ix("end");
+  const iAct = ix("activity");
+  const iNote = ix("note");
+  if (iTask < 0 || iStart < 0 || iEnd < 0) return state.entries;
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const taskId = row[iTask];
+    const start = row[iStart];
+    const end = row[iEnd];
+    if (!taskId || !start || !end) continue;
+    if (!findLeaf(taskId)) continue;
+    const st = new Date(start);
+    const en = new Date(end);
+    if (isNaN(st.getTime()) || isNaN(en.getTime()) || en <= st) continue;
+    out.push({
+      id: row[iId] || "e" + Date.now() + "-" + r,
+      taskId,
+      start: st.toISOString(),
+      end: en.toISOString(),
+      activity: row[iAct] != null ? String(row[iAct]) : "",
+      note: row[iNote] != null ? String(row[iNote]) : "",
+    });
+  }
+  return out;
+}
+
+function sniffCsvKind(firstLine) {
+  const s = (firstLine || "").toLowerCase();
+  if (s.includes("category_id")) return "taxonomy";
+  if (s.includes("task_id") && s.includes("start")) return "records";
+  if (s.includes("text") && s.includes("done")) return "todos";
+  return null;
+}
+
+function applyImportedCsvFiles(fileTexts) {
+  let taxText;
+  let todoText;
+  let recText;
+  for (const { name, text } of fileTexts) {
+    const t = String(text || "").trim();
+    if (!t) continue;
+    const nm = (name || "").toLowerCase();
+    const first = t.split("\n")[0] || "";
+    if (nm.includes("类目") || nm.includes("taxonomy")) taxText = t;
+    else if (nm.includes("待办") || nm.includes("todos")) todoText = t;
+    else if (nm.includes("记录") || nm.includes("records")) recText = t;
+    else {
+      const kind = sniffCsvKind(first);
+      if (kind === "taxonomy") taxText = t;
+      else if (kind === "todos") todoText = t;
+      else if (kind === "records") recText = t;
+    }
+  }
+  if (!taxText && !todoText && !recText) return;
+  if (taxText) {
+    const rows = parseCsvRows(taxText);
+    state.categories = categoriesFromTaxonomyRows(rows);
+  }
+  if (todoText) {
+    const rows = parseCsvRows(todoText);
+    todoState.items = todosFromRows(rows);
+    saveTodoState();
+  }
+  if (recText) {
+    const rows = parseCsvRows(recText);
+    state.entries = recordsFromRows(rows);
+  }
+  saveState();
+  refreshDependentViews();
+}
+
+function fillLeafSelect(selectEl, selectedTaskId) {
+  if (!selectEl) return;
+  selectEl.innerHTML = "";
+  const leaves = getAllLeaves();
+  if (leaves.length === 0) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "请先添加子类";
+    selectEl.appendChild(o);
+    return;
+  }
+  state.categories.forEach((cat) => {
+    const og = document.createElement("optgroup");
+    og.label = `${getIconChar(cat.icon)} ${cat.name}`;
+    (cat.children || []).forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = `${getIconChar(t.icon)} ${t.name}`;
+      og.appendChild(o);
+    });
+    if (og.children.length) selectEl.appendChild(og);
+  });
+  if (selectedTaskId) selectEl.value = selectedTaskId;
+}
+
+function openEditEntryModal(entryId) {
+  const e = state.entries.find((x) => x.id === entryId);
+  if (!e) return;
+  pendingEditEntryId = entryId;
+  const startEl = $("#edit-entry-start");
+  const endEl = $("#edit-entry-end");
+  if (startEl) startEl.value = toLocalInput(new Date(e.start));
+  if (endEl) endEl.value = toLocalInput(new Date(e.end));
+  const memoEl = $("#edit-entry-memo");
+  if (memoEl) memoEl.value = typeof e.note === "string" ? e.note : "";
+  fillLeafSelect($("#edit-entry-task"), e.taskId);
+  openModal("modal-entry-edit");
+}
+
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
@@ -1181,11 +1515,18 @@ function refreshDependentViews() {
 }
 
 function renderRecommendationSection() {
-  const recIds = getRecommendedTaskIds();
-  const hour = new Date().getHours();
   const recSection = $("#rec-section");
   const recEmpty = $("#rec-empty");
   if (!recSection || !recEmpty) return;
+
+  if (timerStartedAt) {
+    recSection.hidden = true;
+    recEmpty.hidden = true;
+    return;
+  }
+
+  const recIds = getRecommendedTaskIds();
+  const hour = new Date().getHours();
 
   if (recIds.length === 0) {
     recSection.hidden = true;
@@ -1211,6 +1552,12 @@ function renderRecommendationSection() {
       switchTab("timer");
       stopTimerInterval();
       timerStartedAt = null;
+      const z = formatClock(0);
+      const d1 = $("#timer-display");
+      const d2 = $("#timer-display-run");
+      if (d1) d1.textContent = z;
+      if (d2) d2.textContent = z;
+      setRingProgress(0);
       timerMode = null;
       preselectedTaskId = null;
       showTimerRunningView(false);
@@ -1265,21 +1612,30 @@ function renderTimeline() {
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
-    const item = document.createElement("article");
-    item.className = "timeline-item";
-    item.innerHTML = `
-      <div class="timeline-dot-wrap">
-        <div class="timeline-dot" style="border-color:${found.leaf.color}; background:${found.category.color}">
-          <span>${getIconChar(found.leaf.icon)}</span>
+    const wrap = document.createElement("div");
+    wrap.className = "timeline-swipe-wrap";
+    wrap.dataset.entryId = e.id;
+    wrap.innerHTML = `
+      <div class="timeline-swipe-track">
+        <div class="timeline-swipe-front">
+          <div class="timeline-dot-wrap">
+            <div class="timeline-dot" style="border-color:${found.leaf.color}; background:${found.category.color}">
+              <span>${getIconChar(found.leaf.icon)}</span>
+            </div>
+          </div>
+          <div class="timeline-content">
+            <p class="timeline-time">${escapeHtml(timeLine)}</p>
+            <h3 class="timeline-main">${escapeHtml(formatDuration(sec))}</h3>
+            <p class="timeline-category">${escapeHtml(found.category.name)} · ${escapeHtml(found.leaf.name)}</p>
+            ${memoBlock}
+          </div>
         </div>
-      </div>
-      <div class="timeline-content">
-        <p class="timeline-time">${escapeHtml(timeLine)}</p>
-        <h3 class="timeline-main">${escapeHtml(formatDuration(sec))}</h3>
-        <p class="timeline-category">${escapeHtml(found.category.name)} · ${escapeHtml(found.leaf.name)}</p>
-        ${memoBlock}
+        <button type="button" class="timeline-swipe-edit">编辑</button>
+        <button type="button" class="timeline-swipe-delete">删除</button>
+        <div class="timeline-swipe-overshoot" aria-hidden="true"></div>
       </div>`;
-    timeline.appendChild(item);
+    timeline.appendChild(wrap);
+    attachTimelineEntrySwipe(wrap, e.id);
   });
   list.appendChild(timeline);
 }
@@ -1499,6 +1855,13 @@ const TODO_MIN_TX = -(TODO_DELETE_W + TODO_DELETE_OVERSHOOT);
 /** 松手时位移 ≤ 此值视为「滑到底」，自动删除（需接近完全露出删除区，约 -68px） */
 const TODO_AUTO_DELETE_TX = -(TODO_DELETE_W - 4);
 
+const TL_EDIT_W = 72;
+const TL_DEL_W = 72;
+const TL_SWIPE_OS = 36;
+const TL_ACTIONS_W = TL_EDIT_W + TL_DEL_W;
+const TL_MIN_TX = -(TL_ACTIONS_W + TL_SWIPE_OS);
+const TL_AUTO_DELETE_TX = -(TL_ACTIONS_W - 4);
+
 function readTranslateX(el) {
   const inline = el.style.transform;
   if (inline) {
@@ -1531,6 +1894,122 @@ function clearCompletedTodos() {
   todoState.items = todoState.items.filter((x) => !x.done);
   saveTodoState();
   renderTodos();
+}
+
+function deleteEntryById(id) {
+  state.entries = state.entries.filter((x) => x.id !== id);
+  saveState();
+  if ($("#panel-stats")?.classList.contains("active")) renderStats();
+  if ($("#panel-home")?.classList.contains("active")) renderHome();
+}
+
+function attachTimelineEntrySwipe(wrap, entryId) {
+  const track = wrap.querySelector(".timeline-swipe-track");
+  const front = wrap.querySelector(".timeline-swipe-front");
+  const editBtn = wrap.querySelector(".timeline-swipe-edit");
+  const delBtn = wrap.querySelector(".timeline-swipe-delete");
+  if (!track || !front || !editBtn || !delBtn) return;
+
+  track.style.width = `calc(100% + ${TL_ACTIONS_W + TL_SWIPE_OS}px)`;
+
+  function getTx() {
+    return readTranslateX(track);
+  }
+
+  function setTx(tx, smooth) {
+    const x = Math.max(TL_MIN_TX, Math.min(0, tx));
+    track.style.transition = smooth ? "transform 0.2s ease" : "none";
+    track.style.transform = `translateX(${x}px)`;
+    if (x <= -TL_ACTIONS_W / 2) wrap.classList.add("is-open");
+    else wrap.classList.remove("is-open");
+  }
+
+  function closeOtherTimelineSwipes() {
+    document
+      .querySelectorAll("#timeline-list .timeline-swipe-wrap.is-open")
+      .forEach((w) => {
+        if (w === wrap) return;
+        w.classList.remove("is-open");
+        const t = w.querySelector(".timeline-swipe-track");
+        if (t) {
+          t.style.transition = "transform 0.2s ease";
+          t.style.transform = "translateX(0)";
+        }
+      });
+  }
+
+  editBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTx(0, true);
+    wrap.classList.remove("is-open");
+    openEditEntryModal(entryId);
+  });
+
+  delBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    deleteEntryById(entryId);
+  });
+
+  front.addEventListener("pointerdown", (e) => {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startTx = getTx();
+    track.style.transition = "none";
+    closeOtherTimelineSwipes();
+    let decided = false;
+    let cancelledVertical = false;
+    let maxAbsDx = 0;
+
+    function suppressClickIfSwiped() {
+      if (maxAbsDx <= TODO_SWIPE_SUPPRESS_CLICK_PX) return;
+      const swallow = (ce) => {
+        ce.preventDefault();
+        ce.stopImmediatePropagation();
+      };
+      front.addEventListener("click", swallow, { capture: true, once: true });
+    }
+
+    function up() {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      if (cancelledVertical) return;
+      const tx = getTx();
+      track.style.transition = "transform 0.2s ease";
+      if (tx <= TL_AUTO_DELETE_TX) {
+        suppressClickIfSwiped();
+        deleteEntryById(entryId);
+        return;
+      }
+      if (tx <= -TL_ACTIONS_W / 2) setTx(-TL_ACTIONS_W, true);
+      else setTx(0, true);
+      suppressClickIfSwiped();
+    }
+
+    function move(ev) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      maxAbsDx = Math.max(maxAbsDx, Math.abs(dx));
+      if (!decided) {
+        if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) {
+          cancelledVertical = true;
+          decided = true;
+          up();
+          return;
+        }
+        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) decided = true;
+        else return;
+      }
+      if (cancelledVertical) return;
+      setTx(startTx + dx, false);
+    }
+
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+  });
 }
 
 function attachTodoSwipe(wrap, itemId) {
@@ -2066,6 +2545,14 @@ function switchTab(name) {
 function showTimerRunningView(show) {
   $("#timer-setup").classList.toggle("hidden", show);
   $("#timer-running").classList.toggle("active", show);
+  const rs = $("#rec-section");
+  const re = $("#rec-empty");
+  if (show) {
+    if (rs) rs.hidden = true;
+    if (re) re.hidden = true;
+  } else {
+    renderRecommendationSection();
+  }
 }
 
 function setRingProgress(sec) {
@@ -2170,6 +2657,10 @@ function commitSaveSheet() {
     alert("请选择子类");
     return;
   }
+  if (entryTimeConflicts(start, end, null)) {
+    alert("时段冲突");
+    return;
+  }
   const memo = ($("#sheet-save-memo")?.value || "").trim();
   state.entries.push({
     id: "e" + Date.now(),
@@ -2266,6 +2757,12 @@ function initTimerTab() {
   $("#btn-cancel-run").onclick = () => {
     stopTimerInterval();
     timerStartedAt = null;
+    const z = formatClock(0);
+    const d1 = $("#timer-display");
+    const d2 = $("#timer-display-run");
+    if (d1) d1.textContent = z;
+    if (d2) d2.textContent = z;
+    setRingProgress(0);
     showTimerRunningView(false);
     timerMode = null;
     preselectedTaskId = null;
@@ -2286,27 +2783,7 @@ function openManualSheet() {
   const end = new Date(now.getTime() - 60 * 60 * 1000);
   $("#manual-start").value = toLocalInput(end);
   $("#manual-end").value = toLocalInput(now);
-  const sel = $("#manual-task");
-  sel.innerHTML = "";
-  const leaves = getAllLeaves();
-  if (leaves.length === 0) {
-    const o = document.createElement("option");
-    o.value = "";
-    o.textContent = "请先添加子类";
-    sel.appendChild(o);
-  } else {
-    state.categories.forEach((cat) => {
-      const og = document.createElement("optgroup");
-      og.label = `${getIconChar(cat.icon)} ${cat.name}`;
-      (cat.children || []).forEach((t) => {
-        const o = document.createElement("option");
-        o.value = t.id;
-        o.textContent = `${getIconChar(t.icon)} ${t.name}`;
-        og.appendChild(o);
-      });
-      if (og.children.length) sel.appendChild(og);
-    });
-  }
+  fillLeafSelect($("#manual-task"), null);
   const memoEl = $("#manual-memo");
   if (memoEl) memoEl.value = "";
   openModal("modal-manual");
@@ -2333,6 +2810,26 @@ function init() {
     updateThemeToggleLabel();
   }
   $("#btn-theme-toggle").onclick = () => toggleTheme();
+
+  $("#btn-export-csv")?.addEventListener("click", () => exportThreeCsvs());
+  $("#btn-import-csv")?.addEventListener("click", () =>
+    $("#import-csv-input")?.click()
+  );
+  $("#import-csv-input")?.addEventListener("change", async (ev) => {
+    const input = ev.target;
+    const files = input?.files ? [...input.files] : [];
+    if (input) input.value = "";
+    if (!files.length) return;
+    try {
+      const pairs = await Promise.all(
+        files.map(async (f) => ({
+          name: f.name,
+          text: await f.text(),
+        }))
+      );
+      applyImportedCsvFiles(pairs);
+    } catch (_) {}
+  });
 
   initTimerTab();
 
@@ -2500,6 +2997,10 @@ function init() {
       alert("结束时间需晚于开始时间");
       return;
     }
+    if (entryTimeConflicts(start, end, null)) {
+      alert("时段冲突");
+      return;
+    }
     state.entries.push({
       id: "e" + Date.now(),
       taskId,
@@ -2512,6 +3013,49 @@ function init() {
     closeModal("modal-manual");
     refreshDependentViews();
   };
+
+  $("#modal-entry-edit-cancel")?.addEventListener("click", () => {
+    pendingEditEntryId = null;
+    closeModal("modal-entry-edit");
+  });
+  $("#modal-entry-edit-save")?.addEventListener("click", () => {
+    if (!pendingEditEntryId) return;
+    const start = new Date($("#edit-entry-start")?.value);
+    const end = new Date($("#edit-entry-end")?.value);
+    const taskId = $("#edit-entry-task")?.value;
+    const memo = ($("#edit-entry-memo")?.value || "").trim();
+    if (!taskId) {
+      alert("请选择子类");
+      return;
+    }
+    if (
+      !(start instanceof Date) ||
+      isNaN(start.getTime()) ||
+      !(end instanceof Date) ||
+      isNaN(end.getTime())
+    ) {
+      alert("请填写有效的开始和结束时间");
+      return;
+    }
+    if (end <= start) {
+      alert("结束时间需晚于开始时间");
+      return;
+    }
+    if (entryTimeConflicts(start, end, pendingEditEntryId)) {
+      alert("时段冲突");
+      return;
+    }
+    const ent = state.entries.find((x) => x.id === pendingEditEntryId);
+    if (!ent) return;
+    ent.taskId = taskId;
+    ent.start = start.toISOString();
+    ent.end = end.toISOString();
+    ent.note = memo;
+    pendingEditEntryId = null;
+    saveState();
+    closeModal("modal-entry-edit");
+    refreshDependentViews();
+  });
 
   function commitTodoAdd() {
     const input = $("#todo-input");
@@ -2535,15 +3079,30 @@ function init() {
   $("#todo-clear-completed")?.addEventListener("click", () => clearCompletedTodos());
 
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#todo-list")) return;
-    document.querySelectorAll("#todo-list .todo-swipe-wrap.is-open").forEach((w) => {
-      w.classList.remove("is-open");
-      const t = w.querySelector(".todo-swipe-track");
-      if (t) {
-        t.style.transition = "transform 0.2s ease";
-        t.style.transform = "translateX(0)";
-      }
-    });
+    if (!e.target.closest("#todo-list")) {
+      document
+        .querySelectorAll("#todo-list .todo-swipe-wrap.is-open")
+        .forEach((w) => {
+          w.classList.remove("is-open");
+          const t = w.querySelector(".todo-swipe-track");
+          if (t) {
+            t.style.transition = "transform 0.2s ease";
+            t.style.transform = "translateX(0)";
+          }
+        });
+    }
+    if (!e.target.closest("#timeline-list")) {
+      document
+        .querySelectorAll("#timeline-list .timeline-swipe-wrap.is-open")
+        .forEach((w) => {
+          w.classList.remove("is-open");
+          const t = w.querySelector(".timeline-swipe-track");
+          if (t) {
+            t.style.transition = "transform 0.2s ease";
+            t.style.transform = "translateX(0)";
+          }
+        });
+    }
   });
 
   document.querySelectorAll(".modal-backdrop").forEach((el) => {
@@ -2559,6 +3118,7 @@ function init() {
           resetDeleteCategoryModal();
           pendingDeleteMigrate = null;
         }
+        if (el.id === "modal-entry-edit") pendingEditEntryId = null;
         el.classList.remove("open");
       }
     });
