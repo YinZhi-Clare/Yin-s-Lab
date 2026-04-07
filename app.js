@@ -407,6 +407,17 @@ function getTaskActivityText(taskId) {
   return ref.category.name;
 }
 
+function cleanLegacyTimelineNote(note, activity) {
+  const n = typeof note === "string" ? note.trim() : "";
+  const a = typeof activity === "string" ? activity.trim() : "";
+  if (!n || !a) return n;
+  const suffixes = [`；${a}`, `;${a}`];
+  for (const s of suffixes) {
+    if (n.endsWith(s)) return n.slice(0, -s.length).trim();
+  }
+  return n;
+}
+
 function leafIdsInCategory(catId) {
   const cat = state.categories.find((c) => c.id === catId);
   if (!cat) return [];
@@ -1628,7 +1639,7 @@ function renderTimeline() {
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
     const sec = Math.max(0, Math.round((range.end - range.start) / 1000));
-    const memoRaw = typeof e.note === "string" ? e.note.trim() : "";
+    const memoRaw = cleanLegacyTimelineNote(e.note, e.activity);
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
