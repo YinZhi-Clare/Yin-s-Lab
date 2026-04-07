@@ -407,13 +407,50 @@ function getTaskActivityText(taskId) {
   return ref.category.name;
 }
 
-function cleanLegacyTimelineNote(note, activity) {
-  const n = typeof note === "string" ? note.trim() : "";
-  const a = typeof activity === "string" ? activity.trim() : "";
-  if (!n || !a) return n;
-  const suffixes = [`；${a}`, `;${a}`];
-  for (const s of suffixes) {
-    if (n.endsWith(s)) return n.slice(0, -s.length).trim();
+function cleanLegacyTimelineNote(note, taskId, storedActivity) {
+  let n = typeof note === "string" ? note.trim() : "";
+  if (!n) return n;
+  const ref = getTaskRef(taskId);
+  const candidates = new Set();
+  const sa = typeof storedActivity === "string" ? storedActivity.trim() : "";
+  if (sa) candidates.add(sa);
+  const cur = getTaskActivityText(taskId);
+  if (cur) candidates.add(cur);
+  if (ref?.kind === "leaf") {
+    candidates.add(`${ref.category.name} · ${ref.leaf.name}`);
+    candidates.add(`${ref.category.name}·${ref.leaf.name}`);
+  } else if (ref?.kind === "category") {
+    candidates.add(ref.category.name);
+  }
+  const seps = ["；", ";"];
+  let changed = true;
+  while (changed && n) {
+    changed = false;
+    for (const line of candidates) {
+      if (!line) continue;
+      for (const sep of seps) {
+        const suf = sep + line;
+        if (n.endsWith(suf)) {
+          n = n.slice(0, -suf.length).trim();
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+  }
+  if (ref?.kind === "leaf" && n) {
+    const re = /[；;]\s*[^；;\n]+?\s*[·・‧∙⋅]\s*[^；;\n]+$/;
+    const m = n.match(re);
+    if (m && m.index != null) {
+      const tail = m[0].replace(/^[；;]\s*/, "").trim();
+      if (
+        tail.includes(ref.leaf.name) &&
+        tail.includes(ref.category.name)
+      ) {
+        n = n.slice(0, m.index).trim();
+      }
+    }
   }
   return n;
 }
@@ -1639,7 +1676,7 @@ function renderTimeline() {
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
     const sec = Math.max(0, Math.round((range.end - range.start) / 1000));
-    const memoRaw = cleanLegacyTimelineNote(e.note, e.activity);
+    const memoRaw = cleanLegacyTimelineNote(e.note, e.taskId, e.activity);
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
