@@ -527,6 +527,32 @@ function cleanLegacyTimelineNote(note, taskId, storedActivity) {
   return n;
 }
 
+function normalizeActivityLabel(s) {
+  return String(s || "")
+    .trim()
+    .replace(/[·・‧∙⋅]/g, "·")
+    .replace(/\s+/g, "");
+}
+
+function forceStripCategoryFromMemoForDisplay(memo, ref) {
+  let m = typeof memo === "string" ? memo.trim() : "";
+  if (!m || !ref) return m;
+  const categoryText =
+    ref.kind === "leaf"
+      ? `${ref.category.name} · ${ref.leaf.name}`
+      : ref.category.name;
+  const catNorm = normalizeActivityLabel(categoryText);
+  if (!catNorm) return m;
+  const wholeNorm = normalizeActivityLabel(m);
+  if (wholeNorm === catNorm) return "";
+  const tail = m.match(/^(.*?)[；;]\s*(.+)$/);
+  if (!tail) return m;
+  const left = (tail[1] || "").trim();
+  const right = (tail[2] || "").trim();
+  if (normalizeActivityLabel(right) === catNorm) return left;
+  return m;
+}
+
 function leafIdsInCategory(catId) {
   const cat = state.categories.find((c) => c.id === catId);
   if (!cat) return [];
@@ -1748,7 +1774,10 @@ function renderTimeline() {
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
     const sec = Math.max(0, Math.round((range.end - range.start) / 1000));
-    const memoRaw = cleanLegacyTimelineNote(e.note, e.taskId, e.activity);
+    const memoRaw = forceStripCategoryFromMemoForDisplay(
+      cleanLegacyTimelineNote(e.note, e.taskId, e.activity),
+      ref
+    );
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
