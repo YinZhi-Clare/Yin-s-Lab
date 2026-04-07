@@ -131,36 +131,6 @@ const DEFAULT_CATEGORIES = [
   },
 ];
 
-function seedEntries() {
-  const now = new Date();
-  const entries = [];
-  let id = 1;
-  const add = (daysAgo, hour, minute, durMin, taskId, memo = "") => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    d.setHours(hour, minute, 0, 0);
-    const end = new Date(d.getTime() + durMin * 60 * 1000);
-    entries.push({
-      id: "e" + id++,
-      taskId,
-      start: d.toISOString(),
-      end: end.toISOString(),
-      activity: "",
-      note: memo,
-    });
-  };
-  const h = now.getHours();
-  for (let i = 0; i < 7; i++) {
-    add(3 + i * 4, h, 5 + i, 25 + i, "t2");
-  }
-  add(0, 10, 0, 90, "t1", "整理本周需求文档；状态不错，上午专注度高");
-  add(0, 14, 30, 45, "t1", "处理邮件与沟通；下午略分心，需要缩短会议");
-  add(1, 9, 0, 120, "t1", "完成核心功能开发；进入心流，进度超预期");
-  add(1, 20, 0, 30, "t5", "晚间放松散步；睡前心情平稳");
-  add(2, 11, 0, 60, "t3", "慢跑和拉伸；运动后精神更好");
-  return entries;
-}
-
 function formatYmd(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -360,7 +330,7 @@ function loadState() {
   } catch (_) {}
   return {
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
-    entries: seedEntries(),
+    entries: [],
     homeFocus: defaultHomeFocus(),
     homeAccum: defaultHomeAccum(),
     statsRange: defaultStatsRange(),
@@ -3240,21 +3210,6 @@ function init() {
     closeModal("modal-entry-edit");
     refreshDependentViews();
   });
-
-  $("#btn-reset-demo").onclick = () => {
-    statsExpandedCats.clear();
-    sessionStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem("timeOnYourSidePrototype.v4");
-    sessionStorage.removeItem("timeOnYourSidePrototype.v3");
-    sessionStorage.removeItem("timeOnYourSidePrototype.v2");
-    sessionStorage.removeItem("timeOnYourSidePrototype.v1");
-    state = loadState();
-    initTimerTab();
-    renderHome();
-    renderStats();
-    renderCategories();
-    renderTodos();
-  };
 
   function commitTodoAdd() {
     const input = $("#todo-input");
