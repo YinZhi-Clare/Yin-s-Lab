@@ -1,9 +1,9 @@
 /**
- * 试用版 Web App — 大类 + 子类 + 记录，localStorage 持久化（与原型 sessionStorage 隔离）
+ * Interactive prototype — categories (大类) + sub-tasks (子类), sessionStorage
  */
-const STORAGE_KEY = "timeOnYourSideApp.v1";
-const THEME_STORAGE_KEY = "timeOnYourSideApp.theme";
-const TODO_STORAGE_KEY = "timeOnYourSideApp.todos.v1";
+const STORAGE_KEY = "timeOnYourSidePrototype.v5";
+const THEME_STORAGE_KEY = "timeOnYourSidePrototype.theme";
+const TODO_STORAGE_KEY = "timeOnYourSidePrototype.todos.v1";
 
 const ICON_MAP = {
   briefcase: "💼",
@@ -83,8 +83,83 @@ const COLOR_PRESETS = [
 /** 删除大类/子类并迁移：新建大类 → 新建子类后归并记录 */
 let pendingDeleteMigrate = null;
 
-/** 新装无演示数据：在「分类」里自行添加大类与子类 */
-const DEFAULT_CATEGORIES = [];
+const DEFAULT_CATEGORIES = [
+  {
+    id: "cat-work",
+    name: "工作",
+    icon: "briefcase",
+    color: COLOR_PRESETS[0].hex,
+    children: [
+      { id: "t1", name: "深度工作", icon: "target", color: COLOR_PRESETS[0].hex },
+    ],
+  },
+  {
+    id: "cat-learn",
+    name: "学习",
+    icon: "book",
+    color: COLOR_PRESETS[1].hex,
+    children: [
+      { id: "t2", name: "阅读", icon: "book", color: COLOR_PRESETS[1].hex },
+    ],
+  },
+  {
+    id: "cat-health",
+    name: "健康",
+    icon: "fitness",
+    color: COLOR_PRESETS[6].hex,
+    children: [
+      { id: "t3", name: "运动", icon: "fitness", color: COLOR_PRESETS[6].hex },
+    ],
+  },
+  {
+    id: "cat-life",
+    name: "生活",
+    icon: "home",
+    color: COLOR_PRESETS[4].hex,
+    children: [
+      { id: "t4", name: "家庭", icon: "home", color: COLOR_PRESETS[4].hex },
+    ],
+  },
+  {
+    id: "cat-rest",
+    name: "休息",
+    icon: "moon",
+    color: COLOR_PRESETS[8].hex,
+    children: [
+      { id: "t5", name: "小憩", icon: "moon", color: COLOR_PRESETS[8].hex },
+    ],
+  },
+];
+
+function seedEntries() {
+  const now = new Date();
+  const entries = [];
+  let id = 1;
+  const add = (daysAgo, hour, minute, durMin, taskId, memo = "") => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysAgo);
+    d.setHours(hour, minute, 0, 0);
+    const end = new Date(d.getTime() + durMin * 60 * 1000);
+    entries.push({
+      id: "e" + id++,
+      taskId,
+      start: d.toISOString(),
+      end: end.toISOString(),
+      activity: "",
+      note: memo,
+    });
+  };
+  const h = now.getHours();
+  for (let i = 0; i < 7; i++) {
+    add(3 + i * 4, h, 5 + i, 25 + i, "t2");
+  }
+  add(0, 10, 0, 90, "t1", "整理本周需求文档；状态不错，上午专注度高");
+  add(0, 14, 30, 45, "t1", "处理邮件与沟通；下午略分心，需要缩短会议");
+  add(1, 9, 0, 120, "t1", "完成核心功能开发；进入心流，进度超预期");
+  add(1, 20, 0, 30, "t5", "晚间放松散步；睡前心情平稳");
+  add(2, 11, 0, 60, "t3", "慢跑和拉伸；运动后精神更好");
+  return entries;
+}
 
 function formatYmd(d) {
   const y = d.getFullYear();
@@ -226,7 +301,7 @@ function normalizePersisted(p) {
   const statsTrendScope = normalizeStatsTrendScope(p.statsTrendScope);
   const timelineDate = normalizeTimelineDate(p.timelineDate);
 
-  if (Array.isArray(p.categories)) {
+  if (p.categories?.length) {
     return {
       categories: p.categories,
       entries: p.entries,
@@ -267,16 +342,25 @@ function normalizePersisted(p) {
 }
 
 function loadState() {
+  const keys = [
+    STORAGE_KEY,
+    "timeOnYourSidePrototype.v4",
+    "timeOnYourSidePrototype.v3",
+    "timeOnYourSidePrototype.v2",
+    "timeOnYourSidePrototype.v1",
+  ];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const p = normalizePersisted(JSON.parse(raw));
-      if (p) return p;
+    for (const key of keys) {
+      const raw = sessionStorage.getItem(key);
+      if (raw) {
+        const p = normalizePersisted(JSON.parse(raw));
+        if (p) return p;
+      }
     }
   } catch (_) {}
   return {
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
-    entries: [],
+    entries: seedEntries(),
     homeFocus: defaultHomeFocus(),
     homeAccum: defaultHomeAccum(),
     statsRange: defaultStatsRange(),
@@ -287,7 +371,7 @@ function loadState() {
 }
 
 function saveState() {
-  localStorage.setItem(
+  sessionStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
       categories: state.categories,
@@ -314,7 +398,7 @@ if (!state.timelineDate) state.timelineDate = defaultTimelineDate();
 
 function loadTodoState() {
   try {
-    const raw = localStorage.getItem(TODO_STORAGE_KEY);
+    const raw = sessionStorage.getItem(TODO_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.items)) {
@@ -336,7 +420,7 @@ function loadTodoState() {
 }
 
 function saveTodoState() {
-  localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(todoState));
+  sessionStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(todoState));
 }
 
 let todoState = loadTodoState();
@@ -1737,12 +1821,13 @@ function syncStatsPresetControls() {
   const row = $("#stats-custom-range-row");
   const custom = state.statsRangePreset === "custom";
   if (row) row.hidden = !custom;
-  [
+  const map = [
     ["today", "#stats-quick-today"],
     ["7", "#stats-quick-7"],
     ["30", "#stats-quick-30"],
     ["custom", "#stats-quick-custom"],
-  ].forEach(([key, sel]) => {
+  ];
+  map.forEach(([key, sel]) => {
     const btn = $(sel);
     if (btn) btn.classList.toggle("active", state.statsRangePreset === key);
   });
@@ -3155,6 +3240,21 @@ function init() {
     closeModal("modal-entry-edit");
     refreshDependentViews();
   });
+
+  $("#btn-reset-demo").onclick = () => {
+    statsExpandedCats.clear();
+    sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem("timeOnYourSidePrototype.v4");
+    sessionStorage.removeItem("timeOnYourSidePrototype.v3");
+    sessionStorage.removeItem("timeOnYourSidePrototype.v2");
+    sessionStorage.removeItem("timeOnYourSidePrototype.v1");
+    state = loadState();
+    initTimerTab();
+    renderHome();
+    renderStats();
+    renderCategories();
+    renderTodos();
+  };
 
   function commitTodoAdd() {
     const input = $("#todo-input");
