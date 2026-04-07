@@ -138,6 +138,10 @@ body {
   z-index: 1;
 }
 
+.app-header-csv-tools[hidden] {
+  display: none !important;
+}
+
 .app-header-csv-btn {
   padding: 6px 8px;
   font-size: var(--fs-4);
@@ -147,7 +151,8 @@ body {
 .app-header-titles {
   width: 100%;
   text-align: center;
-  padding: 0 76px 0 88px;
+  padding: 0 76px;
+  cursor: pointer;
 }
 
 .app-header h1 {

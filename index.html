@@ -26,12 +26,12 @@
     <div class="app">
       <header class="app-header">
         <div class="app-header-row">
-          <div class="app-header-csv-tools">
+          <div class="app-header-csv-tools" id="app-header-csv-tools" hidden>
             <button type="button" class="btn-ghost app-header-csv-btn" id="btn-export-csv">导出</button>
             <button type="button" class="btn-ghost app-header-csv-btn" id="btn-import-csv">导入</button>
             <input type="file" id="import-csv-input" accept=".csv,text/csv" multiple hidden />
           </div>
-          <div class="app-header-titles">
+          <div class="app-header-titles" id="app-header-titles">
             <h1>人生账本</h1>
             <p class="tagline">时间站在你的一边</p>
           </div>
@@ -389,11 +389,10 @@
             <select id="delete-cat-target-leaf"></select>
           </div>
           <p id="delete-cat-migrate-hint" class="empty-hint" hidden>
-            暂无可选子类。可点「新建大类并迁移」，先添加新大类与子类后再归并记录。
+            暂无可选子类。
           </p>
           <div class="timer-actions">
             <button type="button" class="btn-large primary" id="delete-cat-migrate-confirm">确认迁移并删除</button>
-            <button type="button" class="btn-large secondary" id="delete-cat-new-then-migrate">新建大类并迁移</button>
             <button type="button" class="btn-large secondary" id="delete-cat-migrate-back">返回</button>
           </div>
         </div>

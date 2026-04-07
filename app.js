@@ -388,6 +388,25 @@ function findLeaf(leafId) {
   return null;
 }
 
+function findCategory(catId) {
+  return state.categories.find((c) => c.id === catId) || null;
+}
+
+function getTaskRef(taskId) {
+  const leafRef = findLeaf(taskId);
+  if (leafRef) return { kind: "leaf", ...leafRef };
+  const cat = findCategory(taskId);
+  if (cat) return { kind: "category", category: cat };
+  return null;
+}
+
+function getTaskActivityText(taskId) {
+  const ref = getTaskRef(taskId);
+  if (!ref) return "";
+  if (ref.kind === "leaf") return `${ref.category.name} · ${ref.leaf.name}`;
+  return ref.category.name;
+}
+
 function leafIdsInCategory(catId) {
   const cat = state.categories.find((c) => c.id === catId);
   if (!cat) return [];
@@ -424,7 +443,7 @@ function getRecommendedTaskIds() {
   const hour = new Date().getHours();
   const counts = countByTaskAndHour(hour);
   return Object.entries(counts)
-    .filter(([, c]) => c >= 7)
+    .filter(([id, c]) => c >= 7 && !!findLeaf(id))
     .map(([id]) => id);
 }
 
@@ -484,9 +503,9 @@ function aggregateByCategoryInRange(startYmd, endYmd) {
   state.entries.forEach((e) => {
     const sec = clippedDurationSec(e, a, b);
     if (sec <= 0) return;
-    const f = findLeaf(e.taskId);
-    if (!f) return;
-    const cid = f.category.id;
+    const ref = getTaskRef(e.taskId);
+    if (!ref) return;
+    const cid = ref.category.id;
     map[cid] = (map[cid] || 0) + sec;
   });
   return map;
@@ -574,13 +593,14 @@ function entryOverlapsLocalDay(entry, y, m, d) {
 
 function secondsForSelectionOnDay(sel, y, m, d) {
   if (!sel || !sel.id) return 0;
-  const allowed =
-    sel.kind === "leaf"
-      ? new Set([sel.id])
-      : new Set(leafIdsInCategory(sel.id));
+  const allowedLeafIds = sel.kind === "leaf" ? new Set([sel.id]) : new Set(leafIdsInCategory(sel.id));
   let sec = 0;
   state.entries.forEach((e) => {
-    if (!allowed.has(e.taskId)) return;
+    if (sel.kind === "leaf") {
+      if (e.taskId !== sel.id) return;
+    } else {
+      if (e.taskId !== sel.id && !allowedLeafIds.has(e.taskId)) return;
+    }
     if (!entryOverlapsLocalDay(e, y, m, d)) return;
     const ds = new Date(y, m - 1, d, 0, 0, 0).getTime();
     const de = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
@@ -967,7 +987,7 @@ function ensureStatsTrendScope() {
       if (state.categories.some((c) => c.id === state.statsTrendScope.id)) return;
     } else if (findLeaf(state.statsTrendScope.id)) return;
   }
-  const first = state.categories[0];
+  const first = state.categories.find((cat) => (cat.children || []).length > 0);
   if (first) {
     state.statsTrendScope = { kind: "category", id: first.id };
   } else {
@@ -985,6 +1005,7 @@ function fillStatsTrendSelect() {
   const og1 = document.createElement("optgroup");
   og1.label = "大类";
   state.categories.forEach((cat) => {
+    if (!(cat.children || []).length) return;
     const v = `category:${cat.id}`;
     const o = document.createElement("option");
     o.value = v;
@@ -1276,13 +1297,14 @@ function buildRecordsCsv() {
   const headers = ["id", "task_id", "start", "end", "activity", "note"];
   const lines = [headers.join(",")];
   state.entries.forEach((e) => {
+    const activity = e.activity || getTaskActivityText(e.taskId);
     lines.push(
       [
         e.id,
         e.taskId,
         e.start,
         e.end,
-        e.activity || "",
+        activity,
         e.note || "",
       ]
         .map(csvCell)
@@ -1392,7 +1414,7 @@ function recordsFromRows(rows) {
     const start = row[iStart];
     const end = row[iEnd];
     if (!taskId || !start || !end) continue;
-    if (!findLeaf(taskId)) continue;
+    if (!getTaskRef(taskId)) continue;
     const st = new Date(start);
     const en = new Date(end);
     if (isNaN(st.getTime()) || isNaN(en.getTime()) || en <= st) continue;
@@ -1465,6 +1487,7 @@ function fillLeafSelect(selectEl, selectedTaskId) {
     return;
   }
   state.categories.forEach((cat) => {
+    if (!(cat.children || []).length) return;
     const og = document.createElement("optgroup");
     og.label = `${getIconChar(cat.icon)} ${cat.name}`;
     (cat.children || []).forEach((t) => {
@@ -1508,10 +1531,10 @@ function labelHtmlWithParent(leaf) {
 
 function refreshDependentViews() {
   initTimerTab();
-  if ($("#panel-home")?.classList.contains("active")) renderHome();
-  if ($("#panel-stats")?.classList.contains("active")) renderStats();
-  if ($("#panel-categories")?.classList.contains("active")) renderCategories();
-  if ($("#panel-todos")?.classList.contains("active")) renderTodos();
+  renderHome();
+  renderStats();
+  renderCategories();
+  renderTodos();
 }
 
 function renderRecommendationSection() {
@@ -1599,8 +1622,8 @@ function renderTimeline() {
   const timeline = document.createElement("div");
   timeline.className = "timeline-rail";
   todayEntries.forEach((e) => {
-    const found = findLeaf(e.taskId);
-    if (!found) return;
+    const ref = getTaskRef(e.taskId);
+    if (!ref) return;
     const range = clippedRangeMs(e, dayStart, dayEnd);
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
@@ -1619,14 +1642,14 @@ function renderTimeline() {
       <div class="timeline-swipe-track">
         <div class="timeline-swipe-front">
           <div class="timeline-dot-wrap">
-            <div class="timeline-dot" style="border-color:${found.leaf.color}; background:${found.category.color}">
-              <span>${getIconChar(found.leaf.icon)}</span>
+            <div class="timeline-dot" style="border-color:${ref.kind === "leaf" ? ref.leaf.color : ref.category.color}; background:${ref.category.color}">
+              <span>${getIconChar(ref.kind === "leaf" ? ref.leaf.icon : ref.category.icon)}</span>
             </div>
           </div>
           <div class="timeline-content">
             <p class="timeline-time">${escapeHtml(timeLine)}</p>
             <h3 class="timeline-main">${escapeHtml(formatDuration(sec))}</h3>
-            <p class="timeline-category">${escapeHtml(found.category.name)} · ${escapeHtml(found.leaf.name)}</p>
+            <p class="timeline-category">${escapeHtml(ref.kind === "leaf" ? `${ref.category.name} · ${ref.leaf.name}` : ref.category.name)}</p>
             ${memoBlock}
           </div>
         </div>
@@ -2260,8 +2283,7 @@ function applyDeleteTaxonomyModalLabels(kind) {
     if (btnMig) btnMig.textContent = "迁移到其他子类";
   }
   if (hint) {
-    hint.textContent =
-      "暂无可选子类。可点「新建大类并迁移」，先添加新大类与子类后再归并记录。";
+    hint.textContent = "暂无可选子类。";
   }
 }
 
@@ -2561,6 +2583,15 @@ function setRingProgress(sec) {
   document.documentElement.style.setProperty("--p", p + "%");
 }
 
+function resetTimerVisuals() {
+  const z = formatClock(0);
+  const d1 = $("#timer-display");
+  const d2 = $("#timer-display-run");
+  if (d1) d1.textContent = z;
+  if (d2) d2.textContent = z;
+  setRingProgress(0);
+}
+
 function stopTimerInterval() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -2580,12 +2611,12 @@ function startTimerRun() {
   stopTimerInterval();
   timerStartedAt = Date.now();
   showTimerRunningView(true);
-  const found =
+  const ref =
     timerMode === "pick_first" && preselectedTaskId
-      ? findLeaf(preselectedTaskId)
+      ? getTaskRef(preselectedTaskId)
       : null;
-  const label = found
-    ? `${getIconChar(found.leaf.icon)} ${found.leaf.name}`
+  const label = ref
+    ? `${getIconChar(ref.kind === "leaf" ? ref.leaf.icon : ref.category.icon)} ${ref.kind === "leaf" ? ref.leaf.name : ref.category.name}`
     : "计时中";
   $("#timer-sub-run").textContent =
     timerMode === "pick_first" ? `任务：${label}` : "结束后再选择任务";
@@ -2617,6 +2648,7 @@ function openSaveSheet(start, end, durationSec, selectedTaskId = null) {
   const list = $("#sheet-task-list");
   list.innerHTML = "";
   state.categories.forEach((cat) => {
+    if (!(cat.children || []).length) return;
     const sub = document.createElement("div");
     sub.className = "picker-group-label";
     sub.textContent = `${getIconChar(cat.icon)} ${cat.name}`;
@@ -2657,6 +2689,10 @@ function commitSaveSheet() {
     alert("请选择子类");
     return;
   }
+  if (!findLeaf(pendingSaveDraft.taskId)) {
+    alert("请选择子类");
+    return;
+  }
   if (entryTimeConflicts(start, end, null)) {
     alert("时段冲突");
     return;
@@ -2667,7 +2703,7 @@ function commitSaveSheet() {
     taskId: pendingSaveDraft.taskId,
     start: start.toISOString(),
     end: end.toISOString(),
-    activity: "",
+    activity: getTaskActivityText(pendingSaveDraft.taskId),
     note: memo,
   });
   saveState();
@@ -2757,12 +2793,7 @@ function initTimerTab() {
   $("#btn-cancel-run").onclick = () => {
     stopTimerInterval();
     timerStartedAt = null;
-    const z = formatClock(0);
-    const d1 = $("#timer-display");
-    const d2 = $("#timer-display-run");
-    if (d1) d1.textContent = z;
-    if (d2) d2.textContent = z;
-    setRingProgress(0);
+    resetTimerVisuals();
     showTimerRunningView(false);
     timerMode = null;
     preselectedTaskId = null;
@@ -2781,12 +2812,7 @@ function initTimerTab() {
 function openManualSheet() {
   const now = new Date();
   const end = new Date(now.getTime() - 60 * 60 * 1000);
-  $("#manual-start").value = toLocalInput(end);
-  $("#manual-end").value = toLocalInput(now);
-  fillLeafSelect($("#manual-task"), null);
-  const memoEl = $("#manual-memo");
-  if (memoEl) memoEl.value = "";
-  openModal("modal-manual");
+  openSaveSheet(end, now, Math.floor((now - end) / 1000), null);
 }
 
 function openModal(id) {
@@ -2811,10 +2837,17 @@ function init() {
   }
   $("#btn-theme-toggle").onclick = () => toggleTheme();
 
+  $("#app-header-titles")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const tools = $("#app-header-csv-tools");
+    if (!tools) return;
+    tools.hidden = !tools.hidden;
+  });
   $("#btn-export-csv")?.addEventListener("click", () => exportThreeCsvs());
-  $("#btn-import-csv")?.addEventListener("click", () =>
-    $("#import-csv-input")?.click()
-  );
+  $("#btn-import-csv")?.addEventListener("click", () => {
+    alert("导入建议顺序：先导入类目配置，再导入待办事项，最后导入时间记录。");
+    $("#import-csv-input")?.click();
+  });
   $("#import-csv-input")?.addEventListener("change", async (ev) => {
     const input = ev.target;
     const files = input?.files ? [...input.files] : [];
@@ -2895,7 +2928,7 @@ function init() {
     const sel = $("#delete-cat-target-leaf");
     const targetLeafId = sel?.value;
     if (!targetLeafId) {
-      alert("请先选择目标子类，或使用「新建大类并迁移」。");
+      alert("请先选择目标子类。");
       return;
     }
     closeModal("modal-delete-category");
@@ -2907,7 +2940,8 @@ function init() {
       performMigrateEntriesThenDeleteLeaf(ctx.parentCatId, ctx.leafId, targetLeafId);
     }
   };
-  $("#delete-cat-new-then-migrate").onclick = () => {
+  const deleteCatNewThenMigrateBtn = $("#delete-cat-new-then-migrate");
+  if (deleteCatNewThenMigrateBtn) deleteCatNewThenMigrateBtn.onclick = () => {
     const bd = $("#modal-delete-category");
     const ctx = readDeleteTaxonomyContext(bd);
     if (!ctx) return;
@@ -2980,6 +3014,7 @@ function init() {
     pendingSaveDraft = null;
     timerMode = null;
     preselectedTaskId = null;
+    resetTimerVisuals();
     closeModal("modal-save");
   };
   $("#modal-save-confirm").onclick = commitSaveSheet;
@@ -3006,7 +3041,7 @@ function init() {
       taskId,
       start: start.toISOString(),
       end: end.toISOString(),
-      activity: "",
+      activity: getTaskActivityText(taskId),
       note: memo,
     });
     saveState();
@@ -3050,6 +3085,7 @@ function init() {
     ent.taskId = taskId;
     ent.start = start.toISOString();
     ent.end = end.toISOString();
+    ent.activity = getTaskActivityText(taskId);
     ent.note = memo;
     pendingEditEntryId = null;
     saveState();
@@ -3079,6 +3115,10 @@ function init() {
   $("#todo-clear-completed")?.addEventListener("click", () => clearCompletedTodos());
 
   document.addEventListener("click", (e) => {
+    if (!e.target.closest("#app-header-titles") && !e.target.closest("#app-header-csv-tools")) {
+      const tools = $("#app-header-csv-tools");
+      if (tools) tools.hidden = true;
+    }
     if (!e.target.closest("#todo-list")) {
       document
         .querySelectorAll("#todo-list .todo-swipe-wrap.is-open")
