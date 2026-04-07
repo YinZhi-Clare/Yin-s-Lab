@@ -461,98 +461,6 @@ function getTaskActivityText(taskId) {
   return ref.category.name;
 }
 
-function cleanLegacyTimelineNote(note, taskId, storedActivity) {
-  let n = typeof note === "string" ? note.trim() : "";
-  if (!n) return n;
-  const ref = getTaskRef(taskId);
-  const candidates = new Set();
-  const sa = typeof storedActivity === "string" ? storedActivity.trim() : "";
-  if (sa) candidates.add(sa);
-  const cur = getTaskActivityText(taskId);
-  if (cur) candidates.add(cur);
-  if (ref?.kind === "leaf") {
-    candidates.add(`${ref.category.name} · ${ref.leaf.name}`);
-    candidates.add(`${ref.category.name}·${ref.leaf.name}`);
-  } else if (ref?.kind === "category") {
-    candidates.add(ref.category.name);
-  }
-  const seps = ["；", ";"];
-  let changed = true;
-  while (changed && n) {
-    changed = false;
-    for (const line of candidates) {
-      if (!line) continue;
-      for (const sep of seps) {
-        const suf = sep + line;
-        if (n.endsWith(suf)) {
-          n = n.slice(0, -suf.length).trim();
-          changed = true;
-          break;
-        }
-      }
-      if (!changed) {
-        const linePattern = line
-          .trim()
-          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-          .replace(/\s+/g, "\\s*");
-        const re = new RegExp(`[；;]\\s*${linePattern}\\s*$`);
-        if (re.test(n)) {
-          n = n.replace(re, "").trim();
-          changed = true;
-        }
-      }
-      if (changed) break;
-    }
-  }
-  if (ref?.kind === "leaf" && n) {
-    const re = /[；;]\s*[^；;\n]+?\s*[·・‧∙⋅]\s*[^；;\n]+$/;
-    const m = n.match(re);
-    if (m && m.index != null) {
-      const tail = m[0].replace(/^[；;]\s*/, "").trim();
-      if (
-        tail.includes(ref.leaf.name) &&
-        tail.includes(ref.category.name)
-      ) {
-        n = n.slice(0, m.index).trim();
-      }
-    }
-  }
-  if (n) {
-    const normalized = n.replace(/\s+/g, "");
-    for (const line of candidates) {
-      if (!line) continue;
-      if (normalized === line.replace(/\s+/g, "")) return "";
-    }
-  }
-  return n;
-}
-
-function normalizeActivityLabel(s) {
-  return String(s || "")
-    .trim()
-    .replace(/[·・‧∙⋅]/g, "·")
-    .replace(/\s+/g, "");
-}
-
-function forceStripCategoryFromMemoForDisplay(memo, ref) {
-  let m = typeof memo === "string" ? memo.trim() : "";
-  if (!m || !ref) return m;
-  const categoryText =
-    ref.kind === "leaf"
-      ? `${ref.category.name} · ${ref.leaf.name}`
-      : ref.category.name;
-  const catNorm = normalizeActivityLabel(categoryText);
-  if (!catNorm) return m;
-  const wholeNorm = normalizeActivityLabel(m);
-  if (wholeNorm === catNorm) return "";
-  const tail = m.match(/^(.*?)[；;]\s*(.+)$/);
-  if (!tail) return m;
-  const left = (tail[1] || "").trim();
-  const right = (tail[2] || "").trim();
-  if (normalizeActivityLabel(right) === catNorm) return left;
-  return m;
-}
-
 function leafIdsInCategory(catId) {
   const cat = state.categories.find((c) => c.id === catId);
   if (!cat) return [];
@@ -1774,10 +1682,7 @@ function renderTimeline() {
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
     const sec = Math.max(0, Math.round((range.end - range.start) / 1000));
-    const memoRaw = forceStripCategoryFromMemoForDisplay(
-      cleanLegacyTimelineNote(e.note, e.taskId, e.activity),
-      ref
-    );
+    const memoRaw = typeof e.note === "string" ? e.note.trim() : "";
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
