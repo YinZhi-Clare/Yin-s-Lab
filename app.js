@@ -1628,10 +1628,7 @@ function renderTimeline() {
     if (!range) return;
     const timeLine = `${formatHmLocal(range.start)} – ${formatHmLocal(range.end)}`;
     const sec = Math.max(0, Math.round((range.end - range.start) / 1000));
-    const memoParts = [e.note, e.activity]
-      .map((x) => (typeof x === "string" ? x.trim() : ""))
-      .filter(Boolean);
-    const memoRaw = [...new Set(memoParts)].join("；");
+    const memoRaw = typeof e.note === "string" ? e.note.trim() : "";
     const memoBlock = memoRaw
       ? `<p class="timeline-memo">${escapeHtml(memoRaw)}</p>`
       : "";
