@@ -444,6 +444,8 @@ const statsExpandedCats = new Set();
 /** 饼图当前扇区，供点击命中 */
 let statsDonutSegments = [];
 
+let saveSheetDurationListenersBound = false;
+
 let timerInterval = null;
 let timerStartedAt = null;
 let timerMode = null;
@@ -550,8 +552,10 @@ function entryDurationSec(e) {
 }
 
 function formatDuration(sec) {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  if (s < 60) return s === 0 ? "0分钟" : `${s}秒`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}小时${m > 0 ? m + "分" : ""}`;
   return `${m}分钟`;
 }
@@ -2724,21 +2728,39 @@ function finishTimer() {
   stopTimerInterval();
   const end = new Date();
   const start = new Date(timerStartedAt);
-  const durationSec = Math.floor((end - start) / 1000);
   showTimerRunningView(false);
   timerStartedAt = null;
-  openSaveSheet(start, end, durationSec, preselectedTaskId || null);
+  openSaveSheet(start, end, preselectedTaskId || null);
 }
 
-function openSaveSheet(start, end, durationSec, selectedTaskId = null) {
+function refreshSaveSheetDurationFromInputs() {
+  const out = $("#sheet-save-duration");
+  if (!out) return;
+  const start = new Date($("#sheet-save-start")?.value || "");
+  const end = new Date($("#sheet-save-end")?.value || "");
+  if (
+    !(start instanceof Date) ||
+    isNaN(start.getTime()) ||
+    !(end instanceof Date) ||
+    isNaN(end.getTime()) ||
+    end <= start
+  ) {
+    out.textContent = "—";
+    return;
+  }
+  const sec = Math.max(0, Math.floor((end - start) / 1000));
+  out.textContent = formatDuration(sec);
+}
+
+function openSaveSheet(start, end, selectedTaskId = null) {
   pendingSaveDraft = {
     start: start.toISOString(),
     end: end.toISOString(),
     taskId: selectedTaskId,
   };
-  $("#sheet-save-duration").textContent = formatDuration(durationSec);
   $("#sheet-save-start").value = toLocalInput(start);
   $("#sheet-save-end").value = toLocalInput(end);
+  refreshSaveSheetDurationFromInputs();
   const memoEl = $("#sheet-save-memo");
   if (memoEl) memoEl.value = "";
   const list = $("#sheet-task-list");
@@ -2812,7 +2834,7 @@ function commitSaveSheet() {
 
 function toLocalInput(d) {
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function enterPickFirstWithTask(taskId) {
@@ -2825,6 +2847,14 @@ function enterPickFirstWithTask(taskId) {
 }
 
 function initTimerTab() {
+  if (!saveSheetDurationListenersBound) {
+    saveSheetDurationListenersBound = true;
+    const onDur = () => refreshSaveSheetDurationFromInputs();
+    $("#sheet-save-start")?.addEventListener("change", onDur);
+    $("#sheet-save-start")?.addEventListener("input", onDur);
+    $("#sheet-save-end")?.addEventListener("change", onDur);
+    $("#sheet-save-end")?.addEventListener("input", onDur);
+  }
   renderRecommendationSection();
   $("#seg-pick").onclick = () => {
     $("#seg-pick").classList.add("active");
@@ -2908,7 +2938,7 @@ function initTimerTab() {
 function openManualSheet() {
   const now = new Date();
   const end = new Date(now.getTime() - 60 * 60 * 1000);
-  openSaveSheet(end, now, Math.floor((now - end) / 1000), null);
+  openSaveSheet(end, now, null);
 }
 
 function openModal(id) {
