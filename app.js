@@ -1,9 +1,20 @@
 /**
- * Interactive prototype — categories (大类) + sub-tasks (子类), sessionStorage
+ * Categories (大类) + sub-tasks (子类). Main state + todos: localStorage (survives refresh & new tabs).
+ * One-time read of legacy sessionStorage keys, then migrated to localStorage.
  */
 const STORAGE_KEY = "timeOnYourSidePrototype.v5";
 const THEME_STORAGE_KEY = "timeOnYourSidePrototype.theme";
 const TODO_STORAGE_KEY = "timeOnYourSidePrototype.todos.v1";
+
+const STATE_STORAGE_KEYS = [
+  STORAGE_KEY,
+  "timeOnYourSidePrototype.v4",
+  "timeOnYourSidePrototype.v3",
+  "timeOnYourSidePrototype.v2",
+  "timeOnYourSidePrototype.v1",
+];
+
+let _stateMigratedFromSession = false;
 
 const ICON_MAP = {
   briefcase: "💼",
@@ -263,7 +274,8 @@ function normalizeStatsTrendScope(s) {
 }
 
 function normalizePersisted(p) {
-  if (!p || !Array.isArray(p.entries)) return null;
+  if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+  const entries = Array.isArray(p.entries) ? p.entries : [];
   const homeFocus = normalizeHomeFocus(p.homeFocus);
   const homeAccum = normalizeHomeAccum(p.homeAccum);
   const statsRange = normalizeStatsRange(p.statsRange);
@@ -271,60 +283,65 @@ function normalizePersisted(p) {
   const statsTrendScope = normalizeStatsTrendScope(p.statsTrendScope);
   const timelineDate = normalizeTimelineDate(p.timelineDate);
 
+  let categories;
   if (p.categories?.length) {
-    return {
-      categories: p.categories,
-      entries: p.entries,
-      homeFocus,
-      homeAccum,
-      statsRange,
-      statsRangePreset,
-      statsTrendScope,
-      timelineDate,
-    };
+    categories = p.categories;
+  } else if (p.tasks?.length) {
+    categories = [
+      {
+        id: "cat-migrated",
+        name: "我的主题",
+        icon: "folder",
+        color: COLOR_PRESETS[9].hex,
+        children: p.tasks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          icon: "circle",
+          color: t.color || COLOR_PRESETS[9].hex,
+        })),
+      },
+    ];
+  } else {
+    categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
   }
-  if (p.tasks?.length) {
-    return {
-      categories: [
-        {
-          id: "cat-migrated",
-          name: "我的主题",
-          icon: "folder",
-          color: COLOR_PRESETS[9].hex,
-          children: p.tasks.map((t) => ({
-            id: t.id,
-            name: t.name,
-            icon: "circle",
-            color: t.color || COLOR_PRESETS[9].hex,
-          })),
-        },
-      ],
-      entries: p.entries,
-      homeFocus,
-      homeAccum,
-      statsRange,
-      statsRangePreset,
-      statsTrendScope,
-      timelineDate,
-    };
-  }
-  return null;
+
+  return {
+    categories,
+    entries,
+    homeFocus,
+    homeAccum,
+    statsRange,
+    statsRangePreset,
+    statsTrendScope,
+    timelineDate,
+  };
 }
 
 function loadState() {
-  const keys = [
-    STORAGE_KEY,
-    "timeOnYourSidePrototype.v4",
-    "timeOnYourSidePrototype.v3",
-    "timeOnYourSidePrototype.v2",
-    "timeOnYourSidePrototype.v1",
-  ];
+  _stateMigratedFromSession = false;
+  const tryParse = (raw) => {
+    try {
+      return normalizePersisted(JSON.parse(raw));
+    } catch (_) {
+      return null;
+    }
+  };
   try {
-    for (const key of keys) {
+    for (const key of STATE_STORAGE_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const p = tryParse(raw);
+        if (p) return p;
+      }
+    }
+    for (const key of STATE_STORAGE_KEYS) {
       const raw = sessionStorage.getItem(key);
       if (raw) {
-        const p = normalizePersisted(JSON.parse(raw));
-        if (p) return p;
+        const p = tryParse(raw);
+        if (p) {
+          _stateMigratedFromSession = true;
+          return p;
+        }
       }
     }
   } catch (_) {}
@@ -341,22 +358,33 @@ function loadState() {
 }
 
 function saveState() {
-  sessionStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      categories: state.categories,
-      entries: state.entries,
-      homeFocus: state.homeFocus,
-      homeAccum: state.homeAccum,
-      statsRange: state.statsRange,
-      statsRangePreset: state.statsRangePreset,
-      statsTrendScope: state.statsTrendScope,
-      timelineDate: state.timelineDate,
-    })
-  );
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        categories: state.categories,
+        entries: state.entries,
+        homeFocus: state.homeFocus,
+        homeAccum: state.homeAccum,
+        statsRange: state.statsRange,
+        statsRangePreset: state.statsRangePreset,
+        statsTrendScope: state.statsTrendScope,
+        timelineDate: state.timelineDate,
+      })
+    );
+  } catch (e) {
+    console.warn("saveState failed", e);
+  }
 }
 
 let state = loadState();
+if (_stateMigratedFromSession) {
+  saveState();
+  try {
+    for (const key of STATE_STORAGE_KEYS) sessionStorage.removeItem(key);
+  } catch (_) {}
+  _stateMigratedFromSession = false;
+}
 if (!state.homeFocus) state.homeFocus = defaultHomeFocus();
 if (!state.homeAccum) state.homeAccum = defaultHomeAccum();
 if (!state.statsRange) state.statsRange = defaultStatsRange();
@@ -368,11 +396,16 @@ if (!state.timelineDate) state.timelineDate = defaultTimelineDate();
 
 function loadTodoState() {
   try {
-    const raw = sessionStorage.getItem(TODO_STORAGE_KEY);
+    let raw = localStorage.getItem(TODO_STORAGE_KEY);
+    let fromSession = false;
+    if (!raw) {
+      raw = sessionStorage.getItem(TODO_STORAGE_KEY);
+      fromSession = !!raw;
+    }
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.items)) {
-        return {
+        const out = {
           showCompleted: !!parsed.showCompleted,
           items: parsed.items
             .filter((x) => x && typeof x.text === "string")
@@ -383,6 +416,13 @@ function loadTodoState() {
             }))
             .filter((x) => x.text),
         };
+        if (fromSession) {
+          try {
+            localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(out));
+            sessionStorage.removeItem(TODO_STORAGE_KEY);
+          } catch (_) {}
+        }
+        return out;
       }
     }
   } catch (_) {}
@@ -390,7 +430,11 @@ function loadTodoState() {
 }
 
 function saveTodoState() {
-  sessionStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(todoState));
+  try {
+    localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(todoState));
+  } catch (e) {
+    console.warn("saveTodoState failed", e);
+  }
 }
 
 let todoState = loadTodoState();
