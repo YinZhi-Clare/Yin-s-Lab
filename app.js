@@ -713,6 +713,68 @@ function secondsForSelectionOnDay(sel, y, m, d) {
   return sec;
 }
 
+/** 与当前专注趋势等长的上一段连续日期（用于环比） */
+function getPreviousFocusPeriodDayList() {
+  const cur = getFocusDayList();
+  if (!cur.length) return [];
+  const n = cur.length;
+  const first = new Date(cur[0].y, cur[0].m - 1, cur[0].d, 12, 0, 0);
+  first.setDate(first.getDate() - n);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(first);
+    d.setDate(d.getDate() + i);
+    out.push({
+      y: d.getFullYear(),
+      m: d.getMonth() + 1,
+      d: d.getDate(),
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      shortLabel: ["日", "一", "二", "三", "四", "五", "六"][d.getDay()],
+    });
+  }
+  return out;
+}
+
+function focusTrendCompareLabel() {
+  if (state.homeFocus.period === "week") return "较上周";
+  if (state.homeFocus.period === "month") return "较上月";
+  return "较上周期";
+}
+
+function focusSeriesStatsForDayList(sel, days) {
+  const points = days.map((day) =>
+    secondsForSelectionOnDay(sel, day.y, day.m, day.d)
+  );
+  const total = points.reduce((a, b) => a + b, 0);
+  const daysWithData = points.filter((sec) => sec > 0).length;
+  const avgMin =
+    daysWithData > 0 ? Math.round(total / daysWithData / 60) : 0;
+  return { total, daysWithData, avgMin, points };
+}
+
+/** 日均展示：大于 60 分钟时用「x小时x分钟」 */
+function formatAvgMinutesForLegend(avgMin) {
+  if (avgMin <= 60) return `${avgMin} 分钟`;
+  const h = Math.floor(avgMin / 60);
+  const m = avgMin % 60;
+  return m > 0 ? `${h}小时${m}分钟` : `${h}小时`;
+}
+
+function formatFocusAvgCompareHtml(curAvgMin, prevStats) {
+  const label = focusTrendCompareLabel();
+  if (curAvgMin <= 0) return "";
+  if (prevStats.daysWithData === 0) {
+    return ` · ${label} 无上期数据`;
+  }
+  if (prevStats.avgMin <= 0) {
+    return ` · ${label} 上期为 0`;
+  }
+  const pct = ((curAvgMin - prevStats.avgMin) / prevStats.avgMin) * 100;
+  const rounded = Math.round(pct * 10) / 10;
+  const sign = rounded > 0 ? "+" : "";
+  return ` · ${label} ${sign}${rounded}%`;
+}
+
 function getFocusDayList() {
   if (state.homeFocus.period === "custom") {
     const a = parseYmdStartMs(state.homeFocus.customRange.start);
@@ -883,7 +945,7 @@ function renderFocusChart() {
   const n = days.length;
   const CW = 1000;
   const CH = 300;
-  const PADL = 52;
+  const PADL = 24;
   const PADR = 20;
   const PADT = 20;
   const PADB = 44;
@@ -897,11 +959,6 @@ function renderFocusChart() {
   }
   const dotR = n > 14 ? 2.5 : 4;
   let svg = `<svg class="focus-chart-svg" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
-  [0, 0.5, 1].forEach((t) => {
-    const sec = maxSec * t;
-    const y = yAt(sec);
-    svg += `<text x="${PADL - 8}" y="${y + 7}" text-anchor="end" font-size="20" fill="#8e8e93" font-family="PingFang SC,-apple-system,sans-serif">${Math.round(sec / 60)}分</text>`;
-  });
   series.forEach((s) => {
     const pts = s.points
       .map((sec, i) => `${xAt(i).toFixed(2)},${yAt(sec).toFixed(2)}`)
@@ -917,16 +974,20 @@ function renderFocusChart() {
     svg += `<text x="${xAt(i)}" y="${CH - 10}" text-anchor="middle" font-size="19" fill="#8e8e93" font-family="PingFang SC,-apple-system,sans-serif">${day.label}</text>`;
   });
   svg += "</svg>";
+  const prevDays = getPreviousFocusPeriodDayList();
   let legend = '<div class="focus-legend">';
   series.forEach((s) => {
     const total = s.points.reduce((a, b) => a + b, 0);
     const daysWithData = s.points.filter((sec) => sec > 0).length;
     const avgMin =
       daysWithData > 0 ? Math.round(total / daysWithData / 60) : 0;
+    const prevStats = focusSeriesStatsForDayList(s.sel, prevDays);
+    const avgPhrase = formatAvgMinutesForLegend(avgMin);
+    const cmpHtml = formatFocusAvgCompareHtml(avgMin, prevStats);
     legend += `<div class="focus-legend-item">`;
     legend += `<span class="focus-legend-dot" style="background:${s.meta.color}"></span>`;
     legend += `<span class="focus-legend-name">${escapeHtml(s.meta.label)}</span>`;
-    legend += `<span class="focus-legend-avg">日均约 ${avgMin} 分钟</span>`;
+    legend += `<span class="focus-legend-avg">日均约 ${avgPhrase}${cmpHtml}</span>`;
     legend += `</div>`;
   });
   legend += "</div>";
@@ -1822,6 +1883,16 @@ function setStatsQuickRange(numDays) {
 }
 
 function renderStats() {
+  const todayYmd = formatYmd(new Date());
+  if (
+    state.statsRange.start === state.statsRange.end &&
+    state.statsRange.start === todayYmd &&
+    state.statsRangePreset !== "today"
+  ) {
+    state.statsRangePreset = "today";
+    saveState();
+    updateUrlDateState();
+  }
   const { start, end } = state.statsRange;
   const byCat = aggregateByCategoryInRange(start, end);
   const { gradient, segments, total } = buildCategoryDonut(byCat);

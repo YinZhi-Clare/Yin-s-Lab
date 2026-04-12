@@ -1134,6 +1134,10 @@ html[data-theme="dark"] .btn-quick-range.active {
   font-size: var(--fs-4);
   color: var(--text-secondary);
   margin-left: auto;
+  min-width: 0;
+  flex: 1 1 140px;
+  text-align: right;
+  line-height: 1.4;
 }
 
 .home-accum-card .accum-form-group {
