@@ -1234,8 +1234,11 @@ function initialTabFromUrl() {
   const tab = new URL(window.location.href).searchParams.get("tab");
   if (tab === "timeline") return "stats";
   const allowed = new Set(["home", "timer", "stats", "categories", "todos"]);
-  return allowed.has(tab) ? tab : "home";
+  return allowed.has(tab) ? tab : "timer";
 }
+
+/** 首次打开页面且 URL 带 stats 区间时保留一次，避免覆盖分享链接；之后每次进统计页默认「今天」 */
+let statsRangePreservedForInitialStatsTab = false;
 
 function hydrateDateStateFromUrl() {
   const url = new URL(window.location.href);
@@ -1252,7 +1255,10 @@ function hydrateDateStateFromUrl() {
     state.statsRange.start = state.statsRange.end;
     state.statsRange.end = t;
   }
-  if (hadStatsUrl) state.statsRangePreset = "custom";
+  if (hadStatsUrl) {
+    state.statsRangePreset = "custom";
+    statsRangePreservedForInitialStatsTab = true;
+  }
   if (timelineDate && /^\d{4}-\d{2}-\d{2}$/.test(timelineDate)) state.timelineDate = timelineDate;
 }
 
@@ -1972,18 +1978,15 @@ function renderCategories() {
 const TODO_DELETE_W = 72;
 /** 水平位移超过此值视为滑动，吞掉随后的 click，避免 label 误触切换完成态 */
 const TODO_SWIPE_SUPPRESS_CLICK_PX = 6;
-/** 多滑出一段距离，松手即删（滑到底） */
-const TODO_DELETE_OVERSHOOT = 36;
-const TODO_MIN_TX = -(TODO_DELETE_W + TODO_DELETE_OVERSHOOT);
-/** 松手时位移 ≤ 此值视为「滑到底」，自动删除（需接近完全露出删除区，约 -68px） */
-const TODO_AUTO_DELETE_TX = -(TODO_DELETE_W - 4);
+const TODO_MIN_TX = -TODO_DELETE_W;
+/** 露出超过约此比例则松手后吸附为完全展开，否则收回（不自动删除） */
+const TODO_SWIPE_COMMIT_OPEN_RATIO = 0.42;
 
 const TL_EDIT_W = 72;
 const TL_DEL_W = 72;
-const TL_SWIPE_OS = 36;
 const TL_ACTIONS_W = TL_EDIT_W + TL_DEL_W;
-const TL_MIN_TX = -(TL_ACTIONS_W + TL_SWIPE_OS);
-const TL_AUTO_DELETE_TX = -(TL_ACTIONS_W - 4);
+const TL_MIN_TX = -TL_ACTIONS_W;
+const TL_SWIPE_COMMIT_OPEN_RATIO = 0.42;
 
 function readTranslateX(el) {
   const inline = el.style.transform;
@@ -2033,7 +2036,7 @@ function attachTimelineEntrySwipe(wrap, entryId) {
   const delBtn = wrap.querySelector(".timeline-swipe-delete");
   if (!track || !front || !editBtn || !delBtn) return;
 
-  track.style.width = `calc(100% + ${TL_ACTIONS_W + TL_SWIPE_OS}px)`;
+  track.style.width = `calc(100% + ${TL_ACTIONS_W}px)`;
 
   function getTx() {
     return readTranslateX(track);
@@ -2041,7 +2044,7 @@ function attachTimelineEntrySwipe(wrap, entryId) {
 
   function setTx(tx, smooth) {
     const x = Math.max(TL_MIN_TX, Math.min(0, tx));
-    track.style.transition = smooth ? "transform 0.2s ease" : "none";
+    track.style.transition = smooth ? "transform 0.2s ease-out" : "none";
     track.style.transform = `translateX(${x}px)`;
     if (x <= -TL_ACTIONS_W / 2) wrap.classList.add("is-open");
     else wrap.classList.remove("is-open");
@@ -2055,7 +2058,7 @@ function attachTimelineEntrySwipe(wrap, entryId) {
         w.classList.remove("is-open");
         const t = w.querySelector(".timeline-swipe-track");
         if (t) {
-          t.style.transition = "transform 0.2s ease";
+          t.style.transition = "transform 0.2s ease-out";
           t.style.transform = "translateX(0)";
         }
       });
@@ -2100,14 +2103,12 @@ function attachTimelineEntrySwipe(wrap, entryId) {
       document.removeEventListener("pointercancel", up);
       if (cancelledVertical) return;
       const tx = getTx();
-      track.style.transition = "transform 0.2s ease";
-      if (tx <= TL_AUTO_DELETE_TX) {
-        suppressClickIfSwiped();
-        deleteEntryById(entryId);
-        return;
+      track.style.transition = "transform 0.2s ease-out";
+      if (tx <= -TL_ACTIONS_W * TL_SWIPE_COMMIT_OPEN_RATIO) {
+        setTx(-TL_ACTIONS_W, true);
+      } else {
+        setTx(0, true);
       }
-      if (tx <= -TL_ACTIONS_W / 2) setTx(-TL_ACTIONS_W, true);
-      else setTx(0, true);
       suppressClickIfSwiped();
     }
 
@@ -2147,7 +2148,7 @@ function attachTodoSwipe(wrap, itemId) {
 
   function setTx(tx, smooth) {
     const x = Math.max(TODO_MIN_TX, Math.min(0, tx));
-    track.style.transition = smooth ? "transform 0.2s ease" : "none";
+    track.style.transition = smooth ? "transform 0.2s ease-out" : "none";
     track.style.transform = `translateX(${x}px)`;
     if (x <= -TODO_DELETE_W / 2) wrap.classList.add("is-open");
     else wrap.classList.remove("is-open");
@@ -2159,7 +2160,7 @@ function attachTodoSwipe(wrap, itemId) {
       w.classList.remove("is-open");
       const t = w.querySelector(".todo-swipe-track");
       if (t) {
-        t.style.transition = "transform 0.2s ease";
+        t.style.transition = "transform 0.2s ease-out";
         t.style.transform = "translateX(0)";
       }
     });
@@ -2170,6 +2171,8 @@ function attachTodoSwipe(wrap, itemId) {
     e.stopPropagation();
     deleteTodoById(itemId);
   });
+
+  track.style.width = `calc(100% + ${TODO_DELETE_W}px)`;
 
   front.addEventListener("pointerdown", (e) => {
     if (e.target.closest('input[type="checkbox"]')) return;
@@ -2197,14 +2200,12 @@ function attachTodoSwipe(wrap, itemId) {
       document.removeEventListener("pointercancel", up);
       if (cancelledVertical) return;
       const tx = getTx();
-      track.style.transition = "transform 0.2s ease";
-      if (tx <= TODO_AUTO_DELETE_TX) {
-        suppressLabelClickIfSwiped();
-        deleteTodoById(itemId);
-        return;
+      track.style.transition = "transform 0.2s ease-out";
+      if (tx <= -TODO_DELETE_W * TODO_SWIPE_COMMIT_OPEN_RATIO) {
+        setTx(-TODO_DELETE_W, true);
+      } else {
+        setTx(0, true);
       }
-      if (tx <= -TODO_DELETE_W / 2) setTx(-TODO_DELETE_W, true);
-      else setTx(0, true);
       suppressLabelClickIfSwiped();
     }
 
@@ -2658,7 +2659,14 @@ function switchTab(name) {
     tab.setAttribute("aria-current", "page");
   }
   if (name === "home") renderHome();
-  if (name === "stats") renderStats();
+  if (name === "stats") {
+    if (statsRangePreservedForInitialStatsTab) {
+      statsRangePreservedForInitialStatsTab = false;
+      renderStats();
+    } else {
+      setStatsQuickRange(1);
+    }
+  }
   if (name === "categories") renderCategories();
   if (name === "todos") renderTodos();
   updateUrlTabState(name);
@@ -3252,7 +3260,7 @@ function init() {
           w.classList.remove("is-open");
           const t = w.querySelector(".todo-swipe-track");
           if (t) {
-            t.style.transition = "transform 0.2s ease";
+            t.style.transition = "transform 0.2s ease-out";
             t.style.transform = "translateX(0)";
           }
         });
@@ -3264,7 +3272,7 @@ function init() {
           w.classList.remove("is-open");
           const t = w.querySelector(".timeline-swipe-track");
           if (t) {
-            t.style.transition = "transform 0.2s ease";
+            t.style.transition = "transform 0.2s ease-out";
             t.style.transform = "translateX(0)";
           }
         });

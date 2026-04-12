@@ -1487,6 +1487,8 @@ html[data-theme="dark"] .btn-mini.danger {
   font-size: var(--fs-4);
   color: var(--text-secondary);
   line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .timeline-swipe-wrap {
@@ -1547,14 +1549,7 @@ html[data-theme="dark"] .timeline-swipe-delete {
 }
 
 .timeline-swipe-overshoot {
-  width: 36px;
-  flex-shrink: 0;
-  align-self: stretch;
-  background: #ff3b30;
-}
-
-html[data-theme="dark"] .timeline-swipe-overshoot {
-  background: #ff453a;
+  display: none;
 }
 
 /* 待办事项 */
@@ -1614,19 +1609,13 @@ html[data-theme="dark"] .timeline-swipe-overshoot {
 
 .todo-swipe-track {
   display: flex;
-  width: calc(100% + 72px + 36px);
+  width: calc(100% + 72px);
   transform: translateX(0);
   will-change: transform;
 }
 
 .todo-swipe-overshoot {
-  width: 36px;
-  flex-shrink: 0;
-  background: #ff3b30;
-}
-
-html[data-theme="dark"] .todo-swipe-overshoot {
-  background: #ff453a;
+  display: none;
 }
 
 .todo-front {
